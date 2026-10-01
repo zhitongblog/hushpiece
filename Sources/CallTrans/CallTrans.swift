@@ -52,9 +52,9 @@ struct CallTransMain {
         case "start":
             // Detached child of the current shell: inherits the terminal's mic / screen-recording permission.
             if let s = Status.read(), s.isAlive { print("已在运行 (pid \(s.pid))"); exit(0) }
-            let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+            // argv[0] is just "calltrans" when launched via $PATH, so ask the loader for our real path.
             let p = Process()
-            p.executableURL = exe.path.hasPrefix("/") ? exe : URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(exe.path)
+            p.executableURL = (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).resolvingSymlinksInPath()
             p.arguments = ["run"] + argv
             p.standardInput = FileHandle.nullDevice
             p.standardOutput = FileHandle.nullDevice
@@ -74,11 +74,19 @@ struct CallTransMain {
         case "stop":
             guard let s = Status.read(), s.isAlive else { print("没有在运行"); exit(0) }
             kill(s.pid, SIGTERM)
-            for _ in 0..<60 {
+            var exited = false
+            for _ in 0..<40 {   // engine's own watchdog fires at 6 s
                 try? await Task.sleep(for: .milliseconds(250))
-                if kill(s.pid, 0) != 0 { break }
+                if kill(s.pid, 0) != 0 { exited = true; break }
             }
-            print("已结束。记录: \(Paths.sessions.appendingPathComponent(s.session + ".md").path)")
+            if !exited {
+                kill(s.pid, SIGKILL)
+                try? FileManager.default.removeItem(at: Paths.status)
+                print("⚠️ 进程未响应，已强制结束")
+            }
+            let md = Paths.sessions.appendingPathComponent(s.session + ".md")
+            print(FileManager.default.fileExists(atPath: md.path) ? "已结束。记录: \(md.path)"
+                  : "已结束。记录（原始）: \(Paths.sessions.appendingPathComponent(s.session + ".jsonl").path)，可用 calltrans export \(s.session) 导出")
 
         case "status":
             guard let s = Status.read(), s.isAlive else { print("not running"); exit(1) }

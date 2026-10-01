@@ -134,21 +134,32 @@ actor Translator {
         await LanguageAvailability().status(from: Locale.Language(identifier: from), to: Locale.Language(identifier: to)) == .installed
     }
 
+    /// Retries with a fresh session: the translation daemon occasionally drops a request
+    /// (seen right after coreaudiod restarts / on cold start). Later attempts use the
+    /// low-latency model so one bad request can't stall a live call.
     func translate(_ text: String) async throws -> String {
-        if session == nil {
-            if #available(macOS 26.4, *) {
-                session = TranslationSession(installedSource: source, target: target,
-                                             preferredStrategy: fidelity ? .highFidelity : .lowLatency)
-            } else {
-                session = TranslationSession(installedSource: source, target: target)
+        var lastError: Error?
+        for attempt in 0..<3 {
+            if session == nil {
+                if #available(macOS 26.4, *) {
+                    session = TranslationSession(installedSource: source, target: target,
+                                                 preferredStrategy: fidelity && attempt == 0 ? .highFidelity : .lowLatency)
+                } else {
+                    session = TranslationSession(installedSource: source, target: target)
+                }
+            }
+            do {
+                let out = try await session!.translate(text).targetText
+                if attempt > 0 { session = nil }  // go back to the preferred strategy next time
+                return out
+            } catch {
+                session = nil
+                lastError = error
+                Log.info("translate \(source.minimalIdentifier)→\(target.minimalIdentifier) attempt \(attempt + 1) failed: \(error)")
+                try? await Task.sleep(for: .milliseconds(150 * (attempt + 1)))
             }
         }
-        do {
-            return try await session!.translate(text).targetText
-        } catch {
-            session = nil
-            throw error
-        }
+        throw lastError!
     }
 }
 

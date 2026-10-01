@@ -6,7 +6,8 @@
 #   4. typed `say` → English line
 #   5. MCP: initialize / tools/list / tools/call
 set -uo pipefail
-B=${CALLTRANS:-"$(dirname "$0")/../.build/release/calltrans"}
+# Default to the bare command on $PATH so launching works the way the user runs it.
+B=${CALLTRANS:-calltrans}
 T=$(mktemp -d)
 pass=0; fail=0
 ok()  { echo "  ✅ $1"; pass=$((pass+1)); }

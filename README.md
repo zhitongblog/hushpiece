@@ -20,7 +20,8 @@
 ## 安装
 
 ```sh
-brew install --cask blackhole-2ch   # 虚拟麦克风，需要管理员密码，装完不用重启
+brew install --cask blackhole-2ch   # 虚拟麦克风，需要管理员密码
+# 若 calltrans devices 里看不到 BlackHole 2ch：sudo killall coreaudiod（重启系统音频服务）
 ~/code/calltrans/scripts/install.sh # 编译并链接 calltrans 到 /opt/homebrew/bin
 calltrans setup                     # 下载模型、申请权限
 calltrans doctor                    # 全部 ✅ 即可
@@ -31,8 +32,12 @@ calltrans doctor                    # 全部 ✅ 即可
 ## 打电话时
 
 1. **戴耳机**（避免对方声音被麦克风收进去）。
-2. 在微信 / Teams / Zoom 的通话设置里，把 **麦克风** 选成 **BlackHole 2ch**，扬声器保持耳机。
-3. `calltrans start`（只翻译微信的声音：`calltrans start --app WeChat`）
+2. 在通话软件里把 **麦克风** 选成 **BlackHole 2ch**，扬声器保持耳机：
+   - 企业微信：左下角 ☰ → 设置 → 音视频 → 麦克风 选 BlackHole 2ch（通话中也可点麦克风图标旁的 ˄ 切换）
+   - 微信：设置 → 通用 → 音视频通话 → 麦克风
+   - Teams / Zoom：设置 → 音频 / 设备 → 麦克风
+   通话结束后记得把麦克风改回 MacBook 麦克风，否则不开 CallTrans 时对方听不到你。
+3. `calltrans start`（只翻译某个应用的声音：`--app WeWork`（企业微信）/ `--app WeChat`，按应用名或 bundle id 匹配）
 4. 通话结束：点浮窗的"结束"，或 `calltrans stop`。
 
 浮窗：

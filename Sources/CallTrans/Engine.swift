@@ -192,18 +192,44 @@ final class Engine {
         Log.info("running: remote=\(status.remoteSource) mic=\(status.micDevice) out=\(status.outputDevice ?? "none") session=\(log.id)")
     }
 
+    /// Every step is time-boxed: a system framework that never returns must not keep a
+    /// meeting tool alive (and the transcript unsaved) after the user hits stop.
     func shutdown() async {
         timers.forEach { $0.invalidate() }
-        await sys.stop()
+        let sys = self.sys, mic = self.mic, remoteASR = self.remoteASR, myASR = self.myASR
+        await step("system audio", 2) { await sys.stop() }
         mic.stop()
-        await remoteASR.finish()
-        await myASR.finish()
-        try? await Task.sleep(for: .milliseconds(1500))
+        await step("remote ASR", 2) { await remoteASR.finish() }
+        await step("my ASR", 2) { await myASR.finish() }
+        try? await Task.sleep(for: .milliseconds(500))   // let the last translations land
         output?.stop()
+        saveTranscript()
+    }
+
+    /// Idempotent; also called by the exit watchdog.
+    func saveTranscript() {
+        saveLock.lock(); defer { saveLock.unlock() }
+        guard !saved else { return }
+        saved = true
         let md = Paths.sessions.appendingPathComponent("\(log.id).md")
         try? SessionLog.markdown(log.url).write(to: md, atomically: true, encoding: .utf8)
         try? FileManager.default.removeItem(at: Paths.status)
         Log.info("stopped; transcript at \(md.path)")
+    }
+    private let saveLock = NSLock()
+    private var saved = false
+
+    private func step(_ name: String, _ seconds: Double, _ body: @escaping @Sendable () async -> Void) async {
+        let t0 = Date()
+        let finished = await withTaskGroup(of: Bool.self) { g in
+            g.addTask { await body(); return true }
+            g.addTask { try? await Task.sleep(for: .seconds(seconds)); return false }
+            let first = await g.next() ?? false
+            g.cancelAll()
+            return first
+        }
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        Log.info(finished ? "shutdown: \(name) ok (\(ms) ms)" : "shutdown: \(name) timed out after \(ms) ms, skipping")
     }
 
     /// Streams a file in real time, then keeps sending silence (like a quiet line) so the recognizer finalizes.
@@ -315,7 +341,16 @@ func runApp(_ cfg: RunConfig) -> Never {
     let engine = Engine(cfg)
     var panel: OverlayPanel?
 
+    var quitting = false
     func quit() {
+        guard !quitting else { return }
+        quitting = true
+        // Watchdog: whatever happens, save and exit within 6 s.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 6) {
+            Log.info("shutdown watchdog fired")
+            engine.saveTranscript()
+            exit(0)
+        }
         Task {
             await engine.shutdown()
             exit(0)
