@@ -206,6 +206,8 @@ final class Engine {
         saveTranscript()
     }
 
+    func simulateCaptureInterruption() async { await sys.simulateInterruption() }
+
     /// Idempotent; also called by the exit watchdog.
     func saveTranscript() {
         saveLock.lock(); defer { saveLock.unlock() }
@@ -368,6 +370,11 @@ func runApp(_ cfg: RunConfig) -> Never {
         src.resume()
         signalSources.append(src)
     }
+    let usr1 = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+    signal(SIGUSR1, SIG_IGN)
+    usr1.setEventHandler { Task { await engine.simulateCaptureInterruption() } }
+    usr1.resume()
+    signalSources.append(usr1)
     Task { await engine.start() }
     _ = panel
     app.run()

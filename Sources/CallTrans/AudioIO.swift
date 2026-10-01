@@ -10,9 +10,12 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private var stream: SCStream?
     private let queue = DispatchQueue(label: "calltrans.sysaudio", qos: .userInteractive)
     private(set) var description_ = "system audio"
+    private var appName: String?
+    private var stopping = false
 
     /// - Parameter appName: if set, only capture audio from apps whose name contains it (e.g. "WeChat").
     func start(appName: String?) async throws {
+        self.appName = appName
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         guard let display = content.displays.first else {
             throw NSError(domain: "calltrans", code: 2, userInfo: [NSLocalizedDescriptionKey: "no display for ScreenCaptureKit"])
@@ -46,15 +49,45 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         stream = s
     }
 
-    func stop() async { try? await stream?.stopCapture() }
+    func stop() async { stopping = true; try? await stream?.stopCapture() }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sb.isValid, let pcm = sb.pcmBuffer() else { return }
         onBuffer?(pcm)
     }
 
+    /// The stream dies if the user clicks "stop" on the menu-bar recording indicator or the
+    /// capture daemon hiccups. Losing the other side's subtitles mid-call is the worst failure,
+    /// so reconnect until it works (or we're shutting down).
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         Log.info("system audio capture stopped: \(error)")
+        self.stream = nil
+        reconnect(attempt: 1)
+    }
+
+    /// Test hook (SIGUSR1): kill the stream the same way the menu-bar "stop" does, then go
+    /// through the normal didStopWithError path.
+    func simulateInterruption() async {
+        guard let s = stream else { return }
+        try? await s.stopCapture()
+        stream(s, didStopWithError: NSError(domain: "calltrans.test", code: -3817,
+                                            userInfo: [NSLocalizedDescriptionKey: "simulated user stop"]))
+    }
+
+    private func reconnect(attempt: Int) {
+        guard !stopping else { return }
+        DispatchQueue.global().asyncAfter(deadline: .now() + min(Double(attempt), 5)) { [weak self] in
+            guard let self, !self.stopping else { return }
+            Task {
+                do {
+                    try await self.start(appName: self.appName)
+                    Log.info("system audio capture reconnected (attempt \(attempt))")
+                } catch {
+                    Log.info("system audio reconnect attempt \(attempt) failed: \(error)")
+                    self.reconnect(attempt: attempt + 1)
+                }
+            }
+        }
     }
 }
 
