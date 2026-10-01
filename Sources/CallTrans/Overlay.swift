@@ -51,8 +51,16 @@ struct OverlayView: View {
                 .onChange(of: m.remoteLive) { proxy.scrollTo("live", anchor: .bottom) }
                 .onChange(of: m.meLive) { proxy.scrollTo("live", anchor: .bottom) }
             }
-            TextField("输入中文或英文，回车 → 用英语念给对方听", text: $draft)
-                .textFieldStyle(.roundedBorder)
+            // Own dark styling: .roundedBorder keeps a white field in light mode while the
+            // panel's .white foreground makes the typed text white-on-white.
+            TextField("", text: $draft,
+                      prompt: Text("输入中文或英文，回车 → 用英语念给对方听").foregroundStyle(Color.white.opacity(0.45)))
+                .textFieldStyle(.plain)
+                .font(.system(size: 15))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.white.opacity(0.25)))
                 .onSubmit {
                     let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                     draft = ""
@@ -63,6 +71,7 @@ struct OverlayView: View {
         .frame(minWidth: 520, minHeight: 200)
         .background(.black.opacity(0.93), in: RoundedRectangle(cornerRadius: 12))
         .foregroundStyle(.white)
+        .environment(\.colorScheme, .dark)   // light caret / selection on the dark panel
     }
 
     private var header: some View {
