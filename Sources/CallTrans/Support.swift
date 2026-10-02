@@ -202,6 +202,33 @@ func normalizeEnglish(_ s: String) -> String {
     return out
 }
 
+/// Translation-framework language code for a speech locale: zh-CN → zh-Hans, zh-TW/HK → zh-TW,
+/// yue-CN → zh-Hans, ja-JP → ja, en-GB → en.
+func translationLang(_ locale: String) -> String {
+    let l = locale.replacingOccurrences(of: "_", with: "-")
+    if l.hasPrefix("zh-TW") || l.hasPrefix("zh-HK") { return "zh-TW" }
+    if l.hasPrefix("zh") || l.hasPrefix("yue") { return "zh-Hans" }
+    return String(l.prefix(while: { $0 != "-" }))
+}
+
+/// Default partner language: Chinese speakers talk to English speakers and vice versa.
+func defaultPartner(_ lang: String) -> String { lang.hasPrefix("zh") ? "en" : "zh-Hans" }
+
+/// Does the text contain characters of the script this language is written in?
+/// Used to drop recognizer noise ("you", ", , ,") that can't belong to the expected language.
+func matchesScript(_ s: String, lang: String) -> Bool {
+    let l = translationLang(lang)
+    return s.unicodeScalars.contains { c in
+        let v = c.value
+        switch l {
+        case "zh-Hans", "zh-TW": return (0x4E00...0x9FFF).contains(v) || (0x3400...0x4DBF).contains(v)
+        case "ja": return (0x3040...0x30FF).contains(v) || (0x4E00...0x9FFF).contains(v)
+        case "ko": return (0xAC00...0xD7AF).contains(v) || (0x1100...0x11FF).contains(v)
+        default: return c.properties.isAlphabetic && v < 0x0250   // Latin incl. accents
+        }
+    }
+}
+
 func containsCJK(_ s: String) -> Bool {
     s.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) || (0x3400...0x4DBF).contains($0.value) }
 }

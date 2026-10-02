@@ -18,7 +18,7 @@ enum Doctor {
         for l in [remote, mine] {
             out.append(Check(name: "语音识别模型 \(l)", ok: installed.contains(l), fix: "calltrans setup"))
         }
-        let a = String(remote.prefix(2)), b = mine.hasPrefix("zh") ? "zh-Hans" : String(mine.prefix(2))
+        let a = translationLang(remote), b = translationLang(mine)
         out.append(Check(name: "翻译模型 \(a)→\(b)", ok: await Translator.isInstalled(from: a, to: b), fix: "calltrans setup（在弹窗里点“下载”）"))
         out.append(Check(name: "翻译模型 \(b)→\(a)", ok: await Translator.isInstalled(from: b, to: a), fix: "calltrans setup（在弹窗里点“下载”）"))
         out.append(Check(name: "麦克风权限", ok: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
@@ -48,8 +48,8 @@ enum Doctor {
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
     window.title = "CallTrans 初始化"
     window.center()
-    let src = Locale.Language(identifier: String(remote.prefix(2)))
-    let dst = Locale.Language(identifier: mine.hasPrefix("zh") ? "zh-Hans" : String(mine.prefix(2)))
+    let src = Locale.Language(identifier: translationLang(remote))
+    let dst = Locale.Language(identifier: translationLang(mine))
     window.contentView = NSHostingView(rootView: SetupView(m: model, a: src, b: dst))
     window.makeKeyAndOrderFront(nil)
     app.activate(ignoringOtherApps: true)

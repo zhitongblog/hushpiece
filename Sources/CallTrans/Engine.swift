@@ -80,8 +80,8 @@ final class Engine {
 
     init(_ cfg: RunConfig) {
         self.cfg = cfg
-        let remoteLang = String(cfg.remoteLocale.prefix(2))
-        let myLang = cfg.myLocale.hasPrefix("zh") ? "zh-Hans" : String(cfg.myLocale.prefix(2))
+        let remoteLang = translationLang(cfg.remoteLocale)
+        let myLang = translationLang(cfg.myLocale)
         remoteASR = StreamTranscriber(locale: Locale(identifier: cfg.remoteLocale))
         myASR = StreamTranscriber(locale: Locale(identifier: cfg.myLocale))
         toMine = Translator(from: remoteLang, to: myLang)
@@ -100,8 +100,8 @@ final class Engine {
         update { $0.write() }
 
         // Translation models must be installed (`calltrans setup`).
-        let myLang = cfg.myLocale.hasPrefix("zh") ? "zh-Hans" : String(cfg.myLocale.prefix(2))
-        let remoteLang = String(cfg.remoteLocale.prefix(2))
+        let myLang = translationLang(cfg.myLocale)
+        let remoteLang = translationLang(cfg.remoteLocale)
         let fwd = await Translator.isInstalled(from: remoteLang, to: myLang)
         let back = await Translator.isInstalled(from: myLang, to: remoteLang)
         if !fwd || !back {

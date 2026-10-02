@@ -114,9 +114,11 @@ struct CallTransMain {
 
         case "translate":
             let text = a.positional.joined(separator: " ")
-            let toZh = a.string("to").map { $0 == "zh" } ?? !containsCJK(text)
-            let tr = toZh ? Translator(from: "en", to: "zh-Hans", highFidelity: !a.bool("fast"))
-                          : Translator(from: "zh-Hans", to: "en", highFidelity: !a.bool("fast"))
+            // --from / --to take any language the Translation framework supports (en, zh, ja, ko, fr, …).
+            let norm = { (s: String) in s == "zh" ? "zh-Hans" : s }
+            let from = a.string("from").map(norm) ?? (containsCJK(text) ? "zh-Hans" : "en")
+            let to = a.string("to").map(norm) ?? defaultPartner(from)
+            let tr = Translator(from: from, to: to, highFidelity: !a.bool("fast"))
             do {
                 let t0 = Date()
                 print(try await tr.translate(text))
@@ -126,7 +128,8 @@ struct CallTransMain {
         case "transcribe":
             guard let path = a.positional.first else { print("用法: calltrans transcribe <file>"); exit(2) }
             await transcribe(URL(fileURLWithPath: path), lang: a.string("lang") ?? "en-GB",
-                             translate: a.bool("translate"), realtime: a.bool("realtime"))
+                             translate: a.bool("translate"), realtime: a.bool("realtime"),
+                             target: a.string("to").map { $0 == "zh" ? "zh-Hans" : $0 })
 
         case "tts":
             await tts(a)
@@ -159,10 +162,10 @@ struct CallTransMain {
 }
 
 /// Streams a file through the same recognizer (and translator) the live call uses.
-func transcribe(_ url: URL, lang: String, translate: Bool, realtime: Bool) async {
+func transcribe(_ url: URL, lang: String, translate: Bool, realtime: Bool, target: String? = nil) async {
     let asr = StreamTranscriber(locale: Locale(identifier: lang))
-    let isZh = lang.hasPrefix("zh")
-    let tr = isZh ? Translator(from: "zh-Hans", to: "en") : Translator(from: "en", to: "zh-Hans")
+    let src = translationLang(lang)
+    let tr = Translator(from: src, to: target ?? defaultPartner(src))
     let t0 = Date()
     let printer = AsyncStream<String>.makeStream()
     asr.onFinal = { printer.continuation.yield($0) }

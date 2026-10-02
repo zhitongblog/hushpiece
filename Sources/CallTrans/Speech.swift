@@ -22,11 +22,31 @@ final class StreamTranscriber {
     /// Rejects noise and silence hallucinations ("you", ", , ,") that don't match the locale's script.
     func fits(_ text: String) -> Bool {
         guard isMeaningful(text) else { return false }
-        if locale.identifier.hasPrefix("zh") { return containsCJK(text) }
-        return text.unicodeScalars.contains { ("a"..."z").contains($0) || ("A"..."Z").contains($0) }
+        return matchesScript(text, lang: locale.identifier)
+    }
+
+    /// Locales this process is actively transcribing; never released.
+    nonisolated(unsafe) private static var inUse = Set<String>()
+    private static let inUseLock = NSLock()
+
+    /// macOS lets one app hold at most `maximumReservedLocales` (5) speech locales. Switching
+    /// language pairs over time fills that up ("Too many allocated locales"), so release the
+    /// ones no live transcriber is using before taking a new one.
+    static func makeRoom(for locale: Locale) async {
+        let reserved = await AssetInventory.reservedLocales
+        let id = locale.identifier(.bcp47)
+        guard !reserved.contains(where: { $0.identifier(.bcp47) == id }),
+              reserved.count >= AssetInventory.maximumReservedLocales else { return }
+        inUseLock.lock(); let keep = inUse; inUseLock.unlock()
+        for r in reserved where !keep.contains(r.identifier(.bcp47)) {
+            let ok = await AssetInventory.release(reservedLocale: r)
+            Log.info("released speech locale \(r.identifier(.bcp47)) to make room for \(id): \(ok)")
+            if await AssetInventory.reservedLocales.count < AssetInventory.maximumReservedLocales { break }
+        }
     }
 
     static func ensureAssets(_ locale: Locale) async throws {
+        await makeRoom(for: locale)
         let t = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
         if let req = try await AssetInventory.assetInstallationRequest(supporting: [t]) {
             Log.info("ensuring speech model for \(locale.identifier)…")
@@ -42,6 +62,7 @@ final class StreamTranscriber {
                                             transcriptionOptions: [],
                                             reportingOptions: [.volatileResults, .fastResults],
                                             attributeOptions: [])
+        Self.inUseLock.lock(); Self.inUse.insert(supported.identifier(.bcp47)); Self.inUseLock.unlock()
         try await Self.ensureAssets(supported)
         let analyzer = SpeechAnalyzer(modules: [transcriber],
                                       options: .init(priority: .userInitiated, modelRetention: .processLifetime))
