@@ -5,62 +5,81 @@ import Foundation
 let version = "1.0.0"
 
 let usage = """
-CallTrans \(version) — 本地双向通话同传（英⇄中），全部在本机运行
+耳语同传 Hushpiece \(version) — 本机双向会议同传，识别、翻译、发音都在这台 Mac 上完成
 
 用法:
-  calltrans start [选项]        后台启动同传（显示字幕窗），命令立即返回
-  calltrans run [选项]          前台启动同传（Ctrl-C 结束）
-  calltrans stop                结束正在运行的同传，保存记录
-  calltrans status              查看运行状态
-  calltrans say "文本"          让运行中的同传用英语对通话方说这句话（中文会先翻译）
+  hushpiece app                 打开菜单栏 App（和双击“耳语同传.app”一样）
+  hushpiece start [选项]        开始同传（App 在运行时交给它；否则后台启动），命令立即返回
+  hushpiece run [选项]          前台运行一次同传，结束即退出（Ctrl-C 结束）
+  hushpiece stop                结束同传，保存记录
+  hushpiece status              查看运行状态
+  hushpiece say "文本"          让对方听到这句话（不是对方语言的会先翻译）
 
-  calltrans setup               下载模型、申请权限（首次使用）
-  calltrans doctor              检查模型 / 权限 / 虚拟麦克风
-  calltrans devices             列出音频设备
+  hushpiece setup               打开使用引导（选语言、下载模型、授权）
+  hushpiece doctor              检查模型 / 权限 / 虚拟麦克风
+  hushpiece devices             列出音频设备
+  hushpiece langs               列出支持的语言
 
-  calltrans translate "文本" [--to en|zh]
-  calltrans transcribe <音频文件> [--lang en-GB|zh-CN] [--translate] [--realtime]
-  calltrans tts "English text" [--output 设备名|default] [--voice Daniel] [--save out.caf]
-  calltrans sessions | transcript [会话ID] [--last N] | export [会话ID]
+  hushpiece translate "文本" [--from zh] [--to en]
+  hushpiece transcribe <音频文件> [--lang en-GB] [--translate] [--to zh] [--realtime]
+  hushpiece tts "文本" [--lang en-GB] [--output 设备名|default] [--voice Daniel] [--save out.caf]
+  hushpiece sessions | transcript [会话ID] [--last N] | export [会话ID]
 
-  calltrans mcp [--allow-write] MCP 服务器（stdio）
+  hushpiece mcp [--allow-write] MCP 服务器（stdio）
 
-同传选项:
-  --app WeChat          只采集该应用的声音（默认采集全部系统声音）
-  --mic 名称            指定真实麦克风（默认：系统默认输入，自动跳过 BlackHole）
-  --output 名称         对方听到的虚拟麦克风（默认：BlackHole）
-  --voice 名称          英语语音（默认：最佳 en-GB 语音）  --rate 1.0
+同传选项（不写就用 App 设置里的值）:
   --remote-lang en-GB   对方语言       --my-lang zh-CN 我的语言
-  --no-passthrough      不把我的原声送进通话，只送英语译音
-  --no-gate             关闭回声保护（对方说话时也识别我的麦克风；戴耳机时可用）
+  --app 企业微信        只采集该应用的声音（默认采集全部系统声音）
+  --mic 名称            指定真实麦克风（默认：系统默认输入，跳过虚拟麦克风）
+  --output 名称         对方听到的虚拟麦克风（默认：自动）
+  --voice 名称          译文语音   --rate 1.0
+  --no-passthrough      不把我的原声送进通话，只送译文语音
+  --echo-guard auto|on|off   回声保护（默认 auto：外放开、耳机关）；--no-gate 等于 off
+  --always-speak        会议软件没在用虚拟麦克风时也播报译文
   --subtitles-only      只看字幕，不翻译我的话
   --no-overlay          不显示字幕窗    --font-size 20
 """
 
 @main
-struct CallTransMain {
+struct HushpieceMain {
     static func main() async {
-        var argv = Array(CommandLine.arguments.dropFirst())
-        if argv.isEmpty { print(usage); return }
+        var argv = Array(CommandLine.arguments.dropFirst()).filter { !$0.hasPrefix("-psn_") }
+        // Launched from Finder / Login Items / `open`: the menu bar app.
+        if argv.isEmpty {
+            if Bundle.main.bundleURL.pathExtension == "app" {
+                await runAppMode(start: nil, quitWhenSessionEnds: false, showOnboarding: !Prefs.shared.onboarded)
+            }
+            print(usage); return
+        }
         let cmd = argv.removeFirst()
         let a = Args(argv)
 
         switch cmd {
+        case "app":
+            await runAppMode(start: nil, quitWhenSessionEnds: false, showOnboarding: a.bool("onboarding") || !Prefs.shared.onboarded)
+
         case "run":
-            runApp(RunConfig(a))
+            if let pid = AppInstance.runningPID() {
+                print("耳语同传 App 正在运行 (pid \(pid))，请用 hushpiece start"); exit(1)
+            }
+            await runAppMode(start: RunConfig(a), quitWhenSessionEnds: true, showOnboarding: false)
 
         case "start":
-            // Detached child of the current shell: inherits the terminal's mic / screen-recording permission.
             if let s = Status.read(), s.isAlive { print("已在运行 (pid \(s.pid))"); exit(0) }
-            // argv[0] is just "calltrans" when launched via $PATH, so ask the loader for our real path.
-            let p = Process()
-            p.executableURL = (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).resolvingSymlinksInPath()
-            p.arguments = ["run"] + argv
-            p.standardInput = FileHandle.nullDevice
-            p.standardOutput = FileHandle.nullDevice
-            p.standardError = FileHandle.nullDevice
-            do { try p.run() } catch { print("启动失败: \(error)"); exit(1) }
-            for _ in 0..<60 {
+            if AppInstance.runningPID() != nil {
+                try? Control.post(ControlRequest(cmd: "start", args: argv))
+            } else {
+                // Detached child of the current shell: inherits the terminal's mic / screen-recording permission.
+                // argv[0] is just "hushpiece" when launched via $PATH, so ask the loader for our real path.
+                let p = Process()
+                p.executableURL = (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).resolvingSymlinksInPath()
+                p.arguments = ["run"] + argv
+                p.standardInput = FileHandle.nullDevice
+                p.standardOutput = FileHandle.nullDevice
+                p.standardError = FileHandle.nullDevice
+                do { try p.run() } catch { print("启动失败: \(error)"); exit(1) }
+            }
+            for _ in 0..<80 {
                 try? await Task.sleep(for: .milliseconds(250))
                 if let s = Status.read(), s.isAlive, s.remoteSource != "-" {
                     print("已启动 (pid \(s.pid))，会话 \(s.session)")
@@ -73,20 +92,21 @@ struct CallTransMain {
 
         case "stop":
             guard let s = Status.read(), s.isAlive else { print("没有在运行"); exit(0) }
-            kill(s.pid, SIGTERM)
-            var exited = false
+            // Ask the owning process to end the session (the menu bar app keeps running).
+            try? Control.post(ControlRequest(cmd: "stop"))
+            var ended = false
             for _ in 0..<40 {   // engine's own watchdog fires at 6 s
                 try? await Task.sleep(for: .milliseconds(250))
-                if kill(s.pid, 0) != 0 { exited = true; break }
+                if Status.read() == nil || kill(s.pid, 0) != 0 { ended = true; break }
             }
-            if !exited {
+            if !ended {
                 kill(s.pid, SIGKILL)
                 try? FileManager.default.removeItem(at: Paths.status)
                 print("⚠️ 进程未响应，已强制结束")
             }
             let md = Paths.sessions.appendingPathComponent(s.session + ".md")
             print(FileManager.default.fileExists(atPath: md.path) ? "已结束。记录: \(md.path)"
-                  : "已结束。记录（原始）: \(Paths.sessions.appendingPathComponent(s.session + ".jsonl").path)，可用 calltrans export \(s.session) 导出")
+                  : "已结束。记录（原始）: \(Paths.sessions.appendingPathComponent(s.session + ".jsonl").path)，可用 hushpiece export \(s.session) 导出")
 
         case "status":
             guard let s = Status.read(), s.isAlive else { print("not running"); exit(1) }
@@ -94,16 +114,20 @@ struct CallTransMain {
 
         case "say":
             let text = a.positional.joined(separator: " ")
-            guard !text.isEmpty else { print("用法: calltrans say \"文本\""); exit(2) }
+            guard !text.isEmpty else { print("用法: hushpiece say \"文本\""); exit(2) }
             guard let s = Status.read(), s.isAlive else { print("同传没有在运行"); exit(1) }
             try? Inbox.post(SayRequest(text: text, translate: !a.bool("raw")))
             print("已排队")
 
         case "setup":
-            await runSetup(remote: a.string("remote-lang") ?? "en-GB", mine: a.string("my-lang") ?? "zh-CN")
+            if AppInstance.runningPID() != nil { try? Control.post(ControlRequest(cmd: "onboarding")); print("已在耳语同传中打开使用引导"); exit(0) }
+            await runAppMode(start: nil, quitWhenSessionEnds: false, showOnboarding: true)
+
+        case "langs":
+            for l in Lang.all { print("\(l.id)\t\(l.name)") }
 
         case "doctor":
-            let c = await Doctor.checks(remote: a.string("remote-lang") ?? "en-GB", mine: a.string("my-lang") ?? "zh-CN")
+            let c = await Doctor.checks(remote: a.string("remote-lang") ?? Prefs.shared.remoteLang, mine: a.string("my-lang") ?? Prefs.shared.myLang)
             Doctor.print_(c)
             exit(c.allSatisfy(\.ok) ? 0 : 1)
 
@@ -123,10 +147,10 @@ struct CallTransMain {
                 let t0 = Date()
                 print(try await tr.translate(text))
                 if a.bool("timing") { print(String(format: "(%.0f ms)", Date().timeIntervalSince(t0) * 1000)) }
-            } catch { print("翻译失败: \(error)。先运行 calltrans setup"); exit(1) }
+            } catch { print("翻译失败: \(error)。先运行 hushpiece setup"); exit(1) }
 
         case "transcribe":
-            guard let path = a.positional.first else { print("用法: calltrans transcribe <file>"); exit(2) }
+            guard let path = a.positional.first else { print("用法: hushpiece transcribe <file>"); exit(2) }
             await transcribe(URL(fileURLWithPath: path), lang: a.string("lang") ?? "en-GB",
                              translate: a.bool("translate"), realtime: a.bool("realtime"),
                              target: a.string("to").map { $0 == "zh" ? "zh-Hans" : $0 })

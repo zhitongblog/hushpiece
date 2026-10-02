@@ -1,17 +1,19 @@
 import AppKit
 import AVFoundation
 import Foundation
+import NaturalLanguage
 
 struct RunConfig {
     var remoteLocale = "en-GB"
     var myLocale = "zh-CN"
     var remoteApp: String?           // only capture this app's audio (e.g. "WeChat")
     var micName: String?
-    var outputName: String?          // virtual mic device; default: first BlackHole
+    var outputName: String?          // virtual mic device; default: our driver, else any loopback device
     var voiceName: String?
     var rate = 1.0
     var passthrough = true           // also send my original voice to the call
-    var gate = true                  // ignore my mic while the other side is talking (echo guard)
+    var echoGuard = "auto"           // ignore my mic while the other side talks: auto (unless headphones) | on | off
+    var speakOnlyWhenListened = true // don't speak into the virtual mic unless a meeting app is reading it
     var overlay = true
     var translateMe = true
     var fontSize = 20.0
@@ -19,30 +21,35 @@ struct RunConfig {
     var micFile: String?             // test: feed this file as "my" audio instead of the microphone
     var micFileDelay = 2.0
 
-    init(_ a: Args) {
-        remoteLocale = a.string("remote-lang") ?? remoteLocale
-        myLocale = a.string("my-lang") ?? myLocale
-        remoteApp = a.string("app")
-        micName = a.string("mic")
-        outputName = a.string("output")
-        voiceName = a.string("voice")
-        rate = a.double("rate", rate)
-        passthrough = !a.bool("no-passthrough")
-        gate = !a.bool("no-gate")
+    /// Defaults come from the user's settings; CLI flags override them for this run.
+    init(_ a: Args, settings st: Prefs = .shared) {
+        remoteLocale = a.string("remote-lang") ?? st.remoteLang
+        myLocale = a.string("my-lang") ?? st.myLang
+        remoteApp = a.string("app") ?? st.remoteApp
+        micName = a.string("mic") ?? st.micName
+        outputName = a.string("output") ?? st.outputName
+        voiceName = a.string("voice") ?? st.voiceName
+        rate = a.double("rate", st.rate)
+        passthrough = a.bool("no-passthrough") ? false : st.passthrough
+        echoGuard = a.bool("no-gate") ? "off" : (a.string("echo-guard") ?? st.echoGuard)
+        speakOnlyWhenListened = a.bool("always-speak") ? false : st.speakOnlyWhenListened
         overlay = !a.bool("no-overlay")
-        translateMe = !a.bool("subtitles-only")
-        fontSize = a.double("font-size", fontSize)
+        translateMe = a.bool("subtitles-only") ? false : st.translateMe
+        fontSize = a.double("font-size", st.fontSize)
         remoteFile = a.string("remote-file")
         micFile = a.string("mic-file")
         micFileDelay = a.double("mic-file-delay", micFileDelay)
     }
 }
 
-/// Wires: system audio → en ASR → en→zh → overlay;  mic → zh ASR → zh→en → TTS → virtual mic.
+/// Wires: system audio → their-language ASR → translate → overlay;
+///        mic → my-language ASR → translate → TTS → virtual mic (→ the meeting app).
 final class Engine {
     let cfg: RunConfig
-    let model = OverlayModel()
+    let model: OverlayModel
     let log = SessionLog()
+    let remoteL: Lang
+    let myL: Lang
 
     private let remoteASR: StreamTranscriber
     private let myASR: StreamTranscriber
@@ -77,9 +84,15 @@ final class Engine {
     private let statusLock = NSLock()
     private func update(_ f: (inout Status) -> Void) { statusLock.lock(); f(&status); statusLock.unlock() }
     private var timers: [Timer] = []
+    private var gateOn = true               // echo guard currently active
+    private var listeners: [String] = []    // apps reading the virtual mic right now
+    private var ticks = 0
 
-    init(_ cfg: RunConfig) {
+    init(_ cfg: RunConfig, model: OverlayModel) {
         self.cfg = cfg
+        self.model = model
+        remoteL = Lang.of(cfg.remoteLocale)
+        myL = Lang.of(cfg.myLocale)
         let remoteLang = translationLang(cfg.remoteLocale)
         let myLang = translationLang(cfg.myLocale)
         remoteASR = StreamTranscriber(locale: Locale(identifier: cfg.remoteLocale))
@@ -91,21 +104,20 @@ final class Engine {
         status = Status(pid: getpid(), session: log.id, started: Date(), updated: Date(),
                         remoteSource: "-", micDevice: "-", outputDevice: nil, translateMe: cfg.translateMe,
                         remoteLines: 0, meLines: 0, lastRemote: nil, lastMe: nil, errors: [])
-        model.translateMe = cfg.translateMe
-        model.fontSize = cfg.fontSize
+        model.resetForSession(remote: remoteL, mine: myL, translateMe: cfg.translateMe)
     }
 
     func start() async {
         model.onType = { [weak self] t in self?.typed(t) }
         update { $0.write() }
 
-        // Translation models must be installed (`calltrans setup`).
+        // Translation models must be installed (`hushpiece setup`).
         let myLang = translationLang(cfg.myLocale)
         let remoteLang = translationLang(cfg.remoteLocale)
         let fwd = await Translator.isInstalled(from: remoteLang, to: myLang)
         let back = await Translator.isInstalled(from: myLang, to: remoteLang)
         if !fwd || !back {
-            fail("翻译模型未安装：请先运行 calltrans setup")
+            fail("\(remoteL.plain)⇄\(myL.plain) 翻译模型未安装：请在菜单栏 → 使用引导 里下载")
         }
 
         // Output (virtual mic). Without it we run subtitles-only and show the English for me to read aloud.
@@ -114,10 +126,10 @@ final class Engine {
             do {
                 output = try CallOutput(device: outDev)
                 update { $0.outputDevice = outDev.name }
-                await MainActor.run { model.outputLabel = "我的英语 → \(outDev.name)" }
+                await MainActor.run { model.outputDevice = outDev.name }
             } catch { fail("无法打开输出设备 \(outDev.name): \(error.localizedDescription)") }
         } else {
-            fail("未找到虚拟麦克风 BlackHole：只显示字幕，我的英语译文请自己念")
+            fail("没有虚拟麦克风：只显示字幕，我的\(remoteL.plain)译文请自己念")
         }
 
         // Speech queue: one utterance at a time.
@@ -126,6 +138,13 @@ final class Engine {
         Task.detached { [weak self] in
             for await text in stream {
                 guard let self, let out = self.output else { continue }
+                // Speaking into a virtual mic nobody is reading only means the meeting won't hear
+                // it — and before the call starts, the room's chatter would be "spoken" for nothing.
+                if self.cfg.speakOnlyWhenListened && self.currentListeners().isEmpty {
+                    Log.info("not speaking (no app is using \(out.deviceName)): \(text)")
+                    await MainActor.run { self.model.notHeard = true }
+                    continue
+                }
                 let bufs = await self.voice.render(text)
                 await MainActor.run { self.model.speaking = true }
                 await out.play(bufs)
@@ -141,14 +160,17 @@ final class Engine {
             Task { @MainActor in self?.model.meLive = t }
         }
         myASR.onFinal = { [weak self] t in self?.myFinal(t) }
-        do { try await remoteASR.start() } catch { fail("英文识别启动失败: \(error.localizedDescription)") }
-        do { try await myASR.start() } catch { fail("中文识别启动失败: \(error.localizedDescription)") }
+        do { try await remoteASR.start() } catch { fail("\(remoteL.plain)识别启动失败: \(error.localizedDescription)") }
+        do { try await myASR.start() } catch { fail("\(myL.plain)识别启动失败: \(error.localizedDescription)") }
 
         // Their audio.
         sys.onBuffer = { [weak self] b in
             guard let self else { return }
             if rms(b) > 0.008 { self.gateLock.lock(); self.lastRemoteLoud = Date(); self.gateLock.unlock() }
             self.remoteASR.feed(b)
+        }
+        sys.onConnected = { [weak self] ok in
+            Task { @MainActor in self?.model.captureConnected = ok }
         }
         if let f = cfg.remoteFile {
             update { $0.remoteSource = "file " + (f as NSString).lastPathComponent }
@@ -166,8 +188,8 @@ final class Engine {
             guard let self else { return }
             if self.cfg.passthrough { self.output?.passMic(b) }
             if rms(b) > 0.01 { self.gateLock.lock(); self.lastMicLoud = Date(); self.gateLock.unlock() }
-            self.gateLock.lock(); let remoteTalking = Date().timeIntervalSince(self.lastRemoteLoud) < 0.5; self.gateLock.unlock()
-            if (self.cfg.gate && remoteTalking) || !self.model.translateMe || (self.output?.speaking ?? false) {
+            self.gateLock.lock(); let remoteTalking = Date().timeIntervalSince(self.lastRemoteLoud) < 0.5; let gate = self.gateOn; self.gateLock.unlock()
+            if (gate && remoteTalking) || !self.model.translateMe || (self.output?.speaking ?? false) {
                 if let s = FileSource.silence(like: b) { self.myASR.feed(s) }
             } else {
                 self.myASR.feed(b)
@@ -183,8 +205,11 @@ final class Engine {
             fail("无法打开麦克风（需要麦克风权限）: \(error.localizedDescription)")
         } }
 
+        refreshEnvironment()
         await MainActor.run {
-            model.sourceLabel = "对方 ← \(status.remoteSource)  ·  我 ← \(status.micDevice)"
+            model.source = status.remoteSource == "all system audio" ? "全部系统声音" : status.remoteSource.replacingOccurrences(of: "audio of ", with: "")
+            model.mic = status.micDevice
+            model.active = true
             let t1 = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in self?.tick() }
             let t2 = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in self?.writeStatus() }
             timers = [t1, t2]
@@ -289,11 +314,14 @@ final class Engine {
         }
     }
 
-    /// Typed in the overlay, or posted via `calltrans say` / MCP.
+    /// Typed in the overlay, or posted via `hushpiece say` / MCP. Text already in the other
+    /// side's language is spoken as is; anything else is translated first.
     func typed(_ text: String, translate: Bool = true) {
         Task {
             var translated = text
-            if translate && containsCJK(text) {
+            let detected = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue ?? ""
+            let alreadyRemote = translationLang(detected) == translationLang(cfg.remoteLocale)
+            if translate && !alreadyRemote {
                 guard let t = try? await toRemote.translate(text) else { return }
                 translated = t
             }
@@ -318,6 +346,30 @@ final class Engine {
         if commitRemote { Task { await remoteASR.forceFinalize() } }
         if commitMe { Task { await myASR.forceFinalize() } }
         if model.remoteActive != active { model.remoteActive = active }
+        ticks += 1
+        if ticks % 3 == 0 { refreshEnvironment() }
+    }
+
+    /// Who is reading the virtual mic, and whether headphones decide the echo guard.
+    private func refreshEnvironment() {
+        let l = currentListeners()
+        let gate: Bool
+        switch cfg.echoGuard {
+        case "on": gate = true
+        case "off": gate = false
+        default: gate = !Devices.headphonesActive()
+        }
+        gateLock.lock(); listeners = l; gateOn = gate; gateLock.unlock()
+        Task { @MainActor in
+            if self.model.listeners != l { self.model.listeners = l }
+            if !l.isEmpty, self.model.notHeard { self.model.notHeard = false }
+            if self.model.echoGuard != gate { self.model.echoGuard = gate }
+        }
+    }
+
+    private func currentListeners() -> [String] {
+        guard let out = output, let dev = Devices.all().first(where: { $0.name == out.deviceName }) else { return [] }
+        return Devices.listeners(of: dev)
     }
 
     private func writeStatus() {
@@ -332,53 +384,3 @@ final class Engine {
     }
 }
 
-/// Runs the engine with the overlay inside an NSApplication (blocks forever).
-func runApp(_ cfg: RunConfig) -> Never {
-    if let s = Status.read(), s.isAlive, s.pid != getpid() {
-        print("CallTrans 已在运行 (pid \(s.pid))。先运行 calltrans stop。")
-        exit(1)
-    }
-    let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
-    let engine = Engine(cfg)
-    var panel: OverlayPanel?
-
-    var quitting = false
-    func quit() {
-        guard !quitting else { return }
-        quitting = true
-        // Watchdog: whatever happens, save and exit within 6 s.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 6) {
-            Log.info("shutdown watchdog fired")
-            engine.saveTranscript()
-            exit(0)
-        }
-        Task {
-            await engine.shutdown()
-            exit(0)
-        }
-    }
-    engine.model.onQuit = quit
-    if cfg.overlay {
-        panel = OverlayPanel(model: engine.model)
-        panel?.orderFrontRegardless()
-    }
-    for sig in [SIGINT, SIGTERM] {
-        signal(sig, SIG_IGN)
-        let src = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-        src.setEventHandler { quit() }
-        src.resume()
-        signalSources.append(src)
-    }
-    let usr1 = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
-    signal(SIGUSR1, SIG_IGN)
-    usr1.setEventHandler { Task { await engine.simulateCaptureInterruption() } }
-    usr1.resume()
-    signalSources.append(usr1)
-    Task { await engine.start() }
-    _ = panel
-    app.run()
-    exit(0)
-}
-
-private var signalSources: [DispatchSourceSignal] = []

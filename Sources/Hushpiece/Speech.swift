@@ -56,7 +56,7 @@ final class StreamTranscriber {
 
     func start() async throws {
         guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
-            throw NSError(domain: "calltrans", code: 1, userInfo: [NSLocalizedDescriptionKey: "speech locale \(locale.identifier) not supported"])
+            throw NSError(domain: "hushpiece", code: 1, userInfo: [NSLocalizedDescriptionKey: "speech locale \(locale.identifier) not supported"])
         }
         let transcriber = SpeechTranscriber(locale: supported,
                                             transcriptionOptions: [],

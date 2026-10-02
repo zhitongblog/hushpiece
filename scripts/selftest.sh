@@ -7,8 +7,10 @@
 #   5. MCP: initialize / tools/list / tools/call
 set -uo pipefail
 # Default to the bare command on $PATH so launching works the way the user runs it.
-B=${CALLTRANS:-calltrans}
+B=${HUSHPIECE:-hushpiece}
 T=$(mktemp -d)
+# Keep test sessions out of the user's real meeting records.
+export HUSHPIECE_HOME=$T/home
 pass=0; fail=0
 ok()  { echo "  ✅ $1"; pass=$((pass+1)); }
 bad() { echo "  ❌ $1"; fail=$((fail+1)); }
@@ -23,12 +25,14 @@ out=$($B transcribe $T/zh.aiff --lang zh-CN --translate 2>/dev/null); has "$out"
 
 $B stop >/dev/null 2>&1
 echo "2+3+4. 实时引擎"
-$B start --mic-file $T/zh.aiff --mic-file-delay 7 >/dev/null || bad "start"
+# My speech starts well after their sentence ends: with the speakers on (no headphones) the
+# echo guard deliberately ignores my mic while they talk, which would clip my first words.
+$B start --remote-lang en-GB --my-lang zh-CN --mic-file $T/zh.aiff --mic-file-delay 11 >/dev/null || bad "start"
 sleep 1
 afplay $T/en.aiff
 BH=$($B devices | grep -i blackhole | cut -f1)
-if [[ -n "$BH" ]]; then ffmpeg -loglevel error -f avfoundation -i ":$BH" -t 15 -y $T/bh.wav & rec=$!; fi
-sleep 7
+if [[ -n "$BH" ]]; then ffmpeg -loglevel error -f avfoundation -i ":$BH" -t 19 -y $T/bh.wav & rec=$!; fi
+sleep 11
 $B say "好的，没问题。" >/dev/null
 sleep 5
 [[ -n "${rec:-}" ]] && wait $rec

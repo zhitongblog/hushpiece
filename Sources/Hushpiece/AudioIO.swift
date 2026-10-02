@@ -7,8 +7,10 @@ import ScreenCaptureKit
 
 final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     var onBuffer: ((AVAudioPCMBuffer) -> Void)?
+    /// false when the stream dies (menu-bar stop, daemon hiccup), true again once reconnected.
+    var onConnected: ((Bool) -> Void)?
     private var stream: SCStream?
-    private let queue = DispatchQueue(label: "calltrans.sysaudio", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "hushpiece.sysaudio", qos: .userInteractive)
     private(set) var description_ = "system audio"
     private var appName: String?
     private var stopping = false
@@ -18,7 +20,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         self.appName = appName
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         guard let display = content.displays.first else {
-            throw NSError(domain: "calltrans", code: 2, userInfo: [NSLocalizedDescriptionKey: "no display for ScreenCaptureKit"])
+            throw NSError(domain: "hushpiece", code: 2, userInfo: [NSLocalizedDescriptionKey: "no display for ScreenCaptureKit"])
         }
         let filter: SCContentFilter
         if let appName {
@@ -26,7 +28,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
                 $0.applicationName.localizedCaseInsensitiveContains(appName) || $0.bundleIdentifier.localizedCaseInsensitiveContains(appName)
             }
             guard !apps.isEmpty else {
-                throw NSError(domain: "calltrans", code: 3, userInfo: [NSLocalizedDescriptionKey: "no running app matches '\(appName)'"])
+                throw NSError(domain: "hushpiece", code: 3, userInfo: [NSLocalizedDescriptionKey: "no running app matches '\(appName)'"])
             }
             filter = SCContentFilter(display: display, including: apps, exceptingWindows: [])
             description_ = "audio of " + apps.map(\.applicationName).joined(separator: ", ")
@@ -62,6 +64,8 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         Log.info("system audio capture stopped: \(error)")
         self.stream = nil
+        guard !stopping else { return }
+        onConnected?(false)
         reconnect(attempt: 1)
     }
 
@@ -70,7 +74,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     func simulateInterruption() async {
         guard let s = stream else { return }
         try? await s.stopCapture()
-        stream(s, didStopWithError: NSError(domain: "calltrans.test", code: -3817,
+        stream(s, didStopWithError: NSError(domain: "hushpiece.test", code: -3817,
                                             userInfo: [NSLocalizedDescriptionKey: "simulated user stop"]))
     }
 
@@ -82,6 +86,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
                 do {
                     try await self.start(appName: self.appName)
                     Log.info("system audio capture reconnected (attempt \(attempt))")
+                    self.onConnected?(true)
                 } catch {
                     Log.info("system audio reconnect attempt \(attempt) failed: \(error)")
                     self.reconnect(attempt: attempt + 1)
@@ -115,7 +120,7 @@ final class MicCapture {
         if let device { try input.auAudioUnit.setDeviceID(device.id) }
         let fmt = input.outputFormat(forBus: 0)
         guard fmt.sampleRate > 0 else {
-            throw NSError(domain: "calltrans", code: 4, userInfo: [NSLocalizedDescriptionKey: "microphone unavailable (permission denied?)"])
+            throw NSError(domain: "hushpiece", code: 4, userInfo: [NSLocalizedDescriptionKey: "microphone unavailable (permission denied?)"])
         }
         input.installTap(onBus: 0, bufferSize: 2048, format: fmt) { [weak self] buf, _ in self?.onBuffer?(buf) }
         engine.prepare()

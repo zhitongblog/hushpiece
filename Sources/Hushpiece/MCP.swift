@@ -15,7 +15,7 @@ enum MCPServer {
             case "initialize":
                 reply(id, ["protocolVersion": (params["protocolVersion"] as? String) ?? "2024-11-05",
                            "capabilities": ["tools": [:]],
-                           "serverInfo": ["name": "calltrans", "version": version]])
+                           "serverInfo": ["name": "hushpiece", "version": version]])
             case "ping":
                 reply(id, [:])
             case "tools/list":
@@ -36,7 +36,7 @@ enum MCPServer {
             ["type": "object", "properties": props, "required": req]
         }
         var t: [[String: Any]] = [
-            ["name": "status", "description": "Whether a live CallTrans translation session is running, its devices, line counts and last lines.",
+            ["name": "status", "description": "Whether a live Hushpiece (耳语同传) translation session is running, its devices, line counts and last lines.",
              "inputSchema": schema([:])],
             ["name": "doctor", "description": "Check speech models, translation models, permissions and the BlackHole virtual mic.",
              "inputSchema": schema([:])],
