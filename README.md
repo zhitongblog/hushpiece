@@ -39,7 +39,6 @@
 brew install --cask blackhole-2ch    # 虚拟麦克风（需要管理员密码）；装完 hushpiece devices 里看不到就重启一次电脑
 scripts/install.sh                    # 编译、签名，装到 /Applications/Hushpiece.app，并把 hushpiece 命令链接进 PATH
 scripts/build-dmg.sh                  # 发布用：签名 + 公证的 DMG（需要 Developer ID 证书和 App Store Connect API 密钥）
-scripts/build-mas.sh                  # Mac App Store 版（沙盒；不含第三方驱动引导）
 ```
 
 需要 Xcode 26（Swift 6）。
