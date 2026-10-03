@@ -47,7 +47,7 @@ struct BrandMark: View {
     @Published var screenAsked = false
     @Published var virtualMic: String?
     @Published var listeners: [String] = []
-    @Published var meetingApp = "企业微信"
+    @Published var meetingApp = UILang.isZh ? "wecom" : "zoom"
 
     @Published var testRunning = false
     @Published var testHeard = ""
@@ -100,23 +100,23 @@ struct BrandMark: View {
     /// sheet, which `.translationTask` in the view presents when c1 / c2 are set.
     func download() async {
         downloading = true
-        downloadNote = "正在下载语音识别模型…"
+        downloadNote = L("正在下载语音识别模型…", "Downloading speech recognition models…")
         for l in [remoteLang, myLang] {
             do { try await StreamTranscriber.ensureAssets(Locale(identifier: l)) }
-            catch { downloadNote = "\(Lang.of(l).name) 语音模型下载失败：\(error.localizedDescription)" }
+            catch { downloadNote = L("\(Lang.of(l).name) 语音模型下载失败：", "Couldn't download the \(Lang.of(l).name) speech model: ") + error.localizedDescription }
         }
-        downloadNote = "正在准备翻译模型（如果弹出下载确认，请点“下载”）…"
+        downloadNote = L("正在准备翻译模型（如果弹出下载确认，请点“下载”）…", "Preparing translation models (if macOS asks to download, click Download)…")
         c1 = .init(source: Locale.Language(identifier: translationLang(remoteLang)), target: Locale.Language(identifier: translationLang(myLang)))
     }
 
     func translationPrepared(first: Bool, error: Error?) async {
-        if let error { downloadNote = "翻译模型准备失败：\(error.localizedDescription)" }
+        if let error { downloadNote = L("翻译模型准备失败：", "Couldn't prepare the translation models: ") + error.localizedDescription }
         if first {
             c2 = .init(source: Locale.Language(identifier: translationLang(myLang)), target: Locale.Language(identifier: translationLang(remoteLang)))
         } else {
             downloading = false
             await refresh()
-            downloadNote = done(.models) ? "模型都准备好了" : downloadNote
+            downloadNote = done(.models) ? L("模型都准备好了", "All models are ready") : downloadNote
         }
     }
 
@@ -153,12 +153,12 @@ struct BrandMark: View {
         let sample = Self.samples[translationLang(remoteLang)] ?? Self.samples["en"]!
         let voice = Voice(language: remoteLang, name: nil, rate: 1.0)
         let bufs = await voice.render(sample)
-        guard let first = bufs.first else { testError = "没有可用的\(remote.plain)语音"; return }
+        guard let first = bufs.first else { testError = L("没有可用的\(remote.plain)语音", "No \(remote.plain) voice is available"); return }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("hushpiece-test-\(UUID().uuidString).caf")
         do {
             let f = try AVAudioFile(forWriting: url, settings: first.format.settings)
             for b in bufs { try f.write(from: b) }
-        } catch { testError = "生成测试语音失败：\(error.localizedDescription)"; return }
+        } catch { testError = L("生成测试语音失败：", "Couldn't create the test audio: ") + error.localizedDescription; return }
         defer { try? FileManager.default.removeItem(at: url) }
 
         let asr = StreamTranscriber(locale: Locale(identifier: remoteLang))
@@ -169,13 +169,13 @@ struct BrandMark: View {
             try await asr.start()
             try FileSource.stream(url, realtime: false) { asr.feed($0) }
             await asr.finish()
-        } catch { testError = "识别失败：\(error.localizedDescription)"; return }
+        } catch { testError = L("识别失败：", "Recognition failed: ") + error.localizedDescription; return }
         lock.lock(); let text = heard.joined(separator: " "); lock.unlock()
-        guard !text.isEmpty else { testError = "没有识别出内容，请先完成第 2 步下载模型"; return }
+        guard !text.isEmpty else { testError = L("没有识别出内容，请先完成第 2 步下载模型", "Nothing was recognised. Finish step 2 (download models) first"); return }
         testHeard = text
         do {
             testTranslated = try await Translator(from: translationLang(remoteLang), to: translationLang(myLang)).translate(text)
-        } catch { testError = "翻译失败：\(error.localizedDescription)。请先完成第 2 步下载模型" }
+        } catch { testError = L("翻译失败：", "Translation failed: ") + error.localizedDescription + L("。请先完成第 2 步下载模型", ". Finish step 2 (download models) first") }
     }
 
     static let samples: [String: String] = [
@@ -193,15 +193,17 @@ struct BrandMark: View {
 
     /// Where each meeting app keeps its microphone setting. The in-call ˄ menu next to the mic
     /// button works in all of them.
-    static let meetingApps: [(String, String)] = [
-        ("企业微信", "左下角 ☰ → 设置 → 音视频 → 麦克风"),
-        ("飞书", "会议中点麦克风按钮旁的 ˄ → 选择麦克风"),
-        ("钉钉", "会议中点麦克风按钮旁的 ˄ → 选择麦克风"),
-        ("腾讯会议", "会议中点麦克风按钮旁的 ˄ → 选择麦克风"),
-        ("微信", "通话中点麦克风按钮旁的 ˄ → 选择麦克风"),
-        ("Zoom", "zoom.us → 设置 → 音频 → 麦克风"),
-        ("Teams", "设置 → 设备 → 麦克风"),
-        ("其他", "在会议软件的音频设置里，把麦克风选成虚拟麦克风"),
+    struct MeetingApp: Hashable { let id: String; let name: String; let how: String }
+    static let meetingApps: [MeetingApp] = [
+        MeetingApp(id: "zoom", name: "Zoom", how: L("zoom.us → 设置 → 音频 → 麦克风", "zoom.us → Settings → Audio → Microphone")),
+        MeetingApp(id: "teams", name: "Teams", how: L("设置 → 设备 → 麦克风", "Settings → Devices → Microphone")),
+        MeetingApp(id: "meet", name: "Google Meet", how: L("会议中点 ⋮ → 设置 → 音频 → 麦克风", "In a call: ⋮ → Settings → Audio → Microphone")),
+        MeetingApp(id: "wecom", name: L("企业微信", "WeCom"), how: L("左下角 ☰ → 设置 → 音视频 → 麦克风", "☰ (bottom left) → Settings → Audio & Video → Microphone")),
+        MeetingApp(id: "feishu", name: L("飞书", "Feishu / Lark"), how: L("会议中点麦克风按钮旁的 ˄ → 选择麦克风", "In a meeting: ˄ next to the microphone button → choose the microphone")),
+        MeetingApp(id: "dingtalk", name: L("钉钉", "DingTalk"), how: L("会议中点麦克风按钮旁的 ˄ → 选择麦克风", "In a meeting: ˄ next to the microphone button → choose the microphone")),
+        MeetingApp(id: "tencent", name: L("腾讯会议", "Tencent Meeting / VooV"), how: L("会议中点麦克风按钮旁的 ˄ → 选择麦克风", "In a meeting: ˄ next to the microphone button → choose the microphone")),
+        MeetingApp(id: "wechat", name: L("微信", "WeChat"), how: L("通话中点麦克风按钮旁的 ˄ → 选择麦克风", "In a call: ˄ next to the microphone button → choose the microphone")),
+        MeetingApp(id: "other", name: L("其他", "Other"), how: L("在会议软件的音频设置里，把麦克风选成虚拟麦克风", "In the meeting app's audio settings, choose the virtual microphone")),
     ]
 }
 
@@ -244,8 +246,8 @@ struct OnboardingView: View {
             HStack(spacing: 10) {
                 BrandMark(size: 40)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("耳语同传").font(.system(size: 15, weight: .semibold))
-                    Text("Hushpiece").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L("耳语同传", "Hushpiece")).font(.system(size: 15, weight: .semibold))
+                    Text(L("Hushpiece", "耳语同传")).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
             .padding(.bottom, 18).padding(.top, 30)
@@ -262,10 +264,10 @@ struct OnboardingView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(title(s) + (m.done(s) ? "，已完成" : ""))
+                .accessibilityLabel(title(s) + (m.done(s) ? L("，已完成", ", done") : ""))
             }
             Spacer()
-            Text("所有识别和翻译都在这台 Mac 上完成，不联网、不上传。")
+            Text(L("所有识别和翻译都在这台 Mac 上完成，不联网、不上传。", "Everything is recognised and translated on this Mac. Nothing goes online."))
                 .font(.system(size: 11)).foregroundStyle(.secondary).padding(.bottom, 16)
         }
         .padding(.horizontal, 14)
@@ -275,82 +277,82 @@ struct OnboardingView: View {
 
     private func title(_ s: OnboardingModel.Step) -> String {
         switch s {
-        case .language: return "1  选择语言"
-        case .models: return "2  下载模型"
-        case .mic: return "3  麦克风权限"
-        case .screen: return "4  听对方的声音"
-        case .virtualMic: return "5  虚拟麦克风"
-        case .test: return "6  试一试"
-        case .meetingApp: return "7  设置会议软件"
+        case .language: return L("1  选择语言", "1  Languages")
+        case .models: return L("2  下载模型", "2  Download models")
+        case .mic: return L("3  麦克风权限", "3  Microphone")
+        case .screen: return L("4  听对方的声音", "4  Hear the other side")
+        case .virtualMic: return L("5  虚拟麦克风", "5  Virtual microphone")
+        case .test: return L("6  试一试", "6  Try it")
+        case .meetingApp: return L("7  设置会议软件", "7  Meeting app")
         }
     }
 
     @ViewBuilder private var content: some View {
         switch m.step {
         case .language:
-            page("你和谁开会？", "选你说的语言和对方说的语言。字幕显示成你的语言；你说的话会翻成对方的语言。") {
+            page(L("你和谁开会？", "Who are you meeting?"), L("选你说的语言和对方说的语言。字幕显示成你的语言；你说的话会翻成对方的语言。", "Pick the language you speak and the language they speak. Subtitles appear in yours; what you say is translated into theirs.")) {
                 Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 14) {
                     GridRow {
-                        Text("我说").foregroundStyle(.secondary)
+                        Text(L("我说", "I speak")).foregroundStyle(.secondary)
                         Picker("", selection: $m.myLang) { ForEach(Lang.all) { Text($0.name).tag($0.id) } }.labelsHidden().frame(width: 220)
                     }
                     GridRow {
-                        Text("对方说").foregroundStyle(.secondary)
+                        Text(L("对方说", "They speak")).foregroundStyle(.secondary)
                         Picker("", selection: $m.remoteLang) { ForEach(Lang.all) { Text($0.name).tag($0.id) } }.labelsHidden().frame(width: 220)
                     }
                 }
                 if m.myLang == m.remoteLang {
-                    note("两边选了同一种语言", warn: true)
+                    note(L("两边选了同一种语言", "Both sides are set to the same language"), warn: true)
                 }
             }
         case .models:
-            page("下载\(m.remote.plain)和\(m.mine.plain)的模型", "语音识别和翻译模型由 macOS 提供，下载一次以后就能离线使用。翻译模型下载时系统会弹窗确认。") {
-                status(m.asrOK, "语音识别：\(m.remote.name)、\(m.mine.name)")
-                status(m.mtOK, "翻译：\(m.remote.plain) ⇄ \(m.mine.plain)")
+            page(L("下载\(m.remote.plain)和\(m.mine.plain)的模型", "Download \(m.remote.plain) and \(m.mine.plain) models"), L("语音识别和翻译模型由 macOS 提供，下载一次以后就能离线使用。翻译模型下载时系统会弹窗确认。", "Speech recognition and translation models come with macOS; download them once and they work offline. macOS asks you to confirm the translation download.")) {
+                status(m.asrOK, L("语音识别：", "Speech recognition: ") + "\(m.remote.name), \(m.mine.name)")
+                status(m.mtOK, L("翻译：", "Translation: ") + "\(m.remote.plain) ⇄ \(m.mine.plain)")
                 if !m.done(.models) {
-                    Button(m.downloading ? "下载中…" : "下载") { Task { await m.download() } }
+                    Button(m.downloading ? L("下载中…", "Downloading…") : L("下载", "Download")) { Task { await m.download() } }
                         .disabled(m.downloading).controlSize(.large).buttonStyle(.borderedProminent)
                 }
                 if !m.downloadNote.isEmpty { note(m.downloadNote) }
             }
         case .mic:
-            page("允许使用麦克风", "用来识别你说的话。声音只在这台 Mac 上处理，不会保存录音。") {
-                status(m.micOK, m.micOK ? "已允许" : "还没有允许")
-                if !m.micOK { Button("允许使用麦克风") { Task { await m.requestMic() } }.controlSize(.large).buttonStyle(.borderedProminent) }
+            page(L("允许使用麦克风", "Allow the microphone"), L("用来识别你说的话。声音只在这台 Mac 上处理，不会保存录音。", "Used to recognise what you say. Audio is processed on this Mac and never recorded.")) {
+                status(m.micOK, m.micOK ? L("已允许", "Allowed") : L("还没有允许", "Not allowed yet"))
+                if !m.micOK { Button(L("允许使用麦克风", "Allow Microphone")) { Task { await m.requestMic() } }.controlSize(.large).buttonStyle(.borderedProminent) }
             }
         case .screen:
-            page("允许听到对方的声音", "macOS 把“听系统声音”归在“屏幕与系统录音”权限里。耳语同传只取声音、不看画面，也不保存音频。") {
-                status(m.screenOK, m.screenOK ? "已允许" : "还没有允许")
+            page(L("允许听到对方的声音", "Let it hear the other side"), L("macOS 把“听系统声音”归在“屏幕与系统录音”权限里。耳语同传只取声音、不看画面，也不保存音频。", "macOS files \"hearing system audio\" under Screen & System Audio Recording. Hushpiece uses the audio only: it never looks at the screen and never saves audio.")) {
+                status(m.screenOK, m.screenOK ? L("已允许", "Allowed") : L("还没有允许", "Not allowed yet"))
                 if !m.screenOK {
-                    Button("打开授权") { m.requestScreen() }.controlSize(.large).buttonStyle(.borderedProminent)
-                    if m.screenAsked { note("在系统设置里打开“耳语同传”的开关后，需要退出并重新打开耳语同传才生效。") }
+                    Button(L("打开授权", "Grant Access")) { m.requestScreen() }.controlSize(.large).buttonStyle(.borderedProminent)
+                    if m.screenAsked { note(L("在系统设置里打开“耳语同传”的开关后，需要退出并重新打开耳语同传才生效。", "After switching Hushpiece on in System Settings, quit and reopen Hushpiece for it to take effect.")) }
                 }
-                note("同传时菜单栏会出现紫色的录制图标，这是正常的。不要点它的“停止”；万一点了，耳语同传会在 1 秒内自动重新连上。")
+                note(L("同传时菜单栏会出现紫色的录制图标，这是正常的。不要点它的“停止”；万一点了，耳语同传会在 1 秒内自动重新连上。", "While interpreting, a purple recording icon shows in the menu bar; that's normal. Don't click its Stop. If you do, Hushpiece reconnects within a second."))
             }
         case .virtualMic:
-            page("让对方听到你的译文", "把你说的\(m.mine.plain)翻成\(m.remote.plain)后念出来，需要一个“虚拟麦克风”，会议软件从这里收你的声音。") {
+            page(L("让对方听到你的译文", "Let them hear your translation"), L("把你说的\(m.mine.plain)翻成\(m.remote.plain)后念出来，需要一个“虚拟麦克风”，会议软件从这里收你的声音。", "To speak your \(m.mine.plain) to them in \(m.remote.plain), Hushpiece needs a \"virtual microphone\" for the meeting app to listen to.")) {
                 if let vm = m.virtualMic {
-                    status(true, "已找到虚拟麦克风：\(vm)")
+                    status(true, L("已找到虚拟麦克风：", "Virtual microphone found: ") + vm)
                 } else {
 #if APPSTORE
                     // App Store build: no third-party driver recommendations (guideline 2.4.5).
-                    status(false, "没有找到虚拟音频设备")
-                    note("如果你的 Mac 上已经有虚拟音频设备，耳语同传会自动使用它。没有也没关系：字幕照常显示，你的\(m.remote.plain)译文显示在字幕窗右侧，可以自己念，或复制到会议的聊天框。")
+                    status(false, L("没有找到虚拟音频设备", "No virtual audio device found"))
+                    note(L("如果你的 Mac 上已经有虚拟音频设备，耳语同传会自动使用它。没有也没关系：字幕照常显示，你的\(m.remote.plain)译文显示在字幕窗右侧，可以自己念，或复制到会议的聊天框。", "If your Mac already has a virtual audio device, Hushpiece uses it automatically. Without one, subtitles still work and your \(m.remote.plain) translation appears on the right of the panel to read out or paste into the chat."))
 #else
-                    status(false, "还没有虚拟麦克风")
-                    note("在终端运行下面的命令安装免费的 BlackHole（需要输入开机密码）。如果装完仍没显示，重启一次电脑即可。")
+                    status(false, L("还没有虚拟麦克风", "No virtual microphone yet"))
+                    note(L("在终端运行下面的命令安装免费的 BlackHole（需要输入开机密码）。如果装完仍没显示，重启一次电脑即可。", "Run this in Terminal to install the free BlackHole (asks for your login password). If it still doesn't show up afterwards, restart the Mac once."))
                     copyBox("brew install --cask blackhole-2ch")
-                    note("也可以先跳过：没有虚拟麦克风时只显示字幕，你的译文显示在屏幕上，自己念给对方听。")
+                    note(L("也可以先跳过：没有虚拟麦克风时只显示字幕，你的译文显示在屏幕上，自己念给对方听。", "Or skip this for now: without a virtual microphone you get subtitles, and your translation is shown on screen for you to read out."))
 #endif
                 }
             }
         case .test:
-            page("试一试", "用\(m.remote.plain)语音念一句话，看能不能识别并翻成\(m.mine.plain)。全程在本机完成。") {
-                Button(m.testRunning ? "测试中…" : "开始测试") { Task { await m.runTest() } }
+            page(L("试一试", "Try it"), L("用\(m.remote.plain)语音念一句话，看能不能识别并翻成\(m.mine.plain)。全程在本机完成。", "Speak a sentence in \(m.remote.plain) and check it is recognised and translated into \(m.mine.plain), all on this Mac.")) {
+                Button(m.testRunning ? L("测试中…", "Testing…") : L("开始测试", "Run Test")) { Task { await m.runTest() } }
                     .disabled(m.testRunning).controlSize(.large).buttonStyle(.borderedProminent)
                 if !m.testHeard.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("听到：\(m.testHeard)").font(.system(size: 13)).foregroundStyle(.secondary)
+                        Text(L("听到：", "Heard: ") + m.testHeard).font(.system(size: 13)).foregroundStyle(.secondary)
                         if !m.testTranslated.isEmpty { Text(m.testTranslated).font(.system(size: 18, weight: .semibold)) }
                     }
                     .padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -359,18 +361,18 @@ struct OnboardingView: View {
                 if !m.testError.isEmpty { note(m.testError, warn: true) }
             }
         case .meetingApp:
-            page("在会议软件里选择麦克风", "把会议软件的麦克风设成虚拟麦克风，扬声器保持耳机或电脑扬声器。") {
-                Picker("会议软件", selection: $m.meetingApp) {
-                    ForEach(OnboardingModel.meetingApps, id: \.0) { Text($0.0).tag($0.0) }
-                }.frame(width: 260)
-                let how = OnboardingModel.meetingApps.first { $0.0 == m.meetingApp }?.1 ?? ""
-                note("\(how)，选 \(m.virtualMic ?? "虚拟麦克风")。")
+            page(L("在会议软件里选择麦克风", "Choose the microphone in your meeting app"), L("把会议软件的麦克风设成虚拟麦克风，扬声器保持耳机或电脑扬声器。", "Set the meeting app's microphone to the virtual microphone; keep the speaker on your headphones or the Mac's speakers.")) {
+                Picker(L("会议软件", "Meeting app"), selection: $m.meetingApp) {
+                    ForEach(OnboardingModel.meetingApps, id: \.id) { Text($0.name).tag($0.id) }
+                }.frame(width: 300)
+                let how = OnboardingModel.meetingApps.first { $0.id == m.meetingApp }?.how ?? ""
+                note(how + L("，选 ", ", then pick ") + (m.virtualMic ?? L("虚拟麦克风", "the virtual microphone")) + L("。", "."))
                 if m.listeners.isEmpty {
-                    status(false, "还没有检测到会议软件在使用 \(m.virtualMic ?? "虚拟麦克风")（进入会议或打开音频设置后会自动检测）")
+                    status(false, L("还没有检测到会议软件在使用 \(m.virtualMic ?? "虚拟麦克风")（进入会议或打开音频设置后会自动检测）", "No meeting app is using \(m.virtualMic ?? "the virtual microphone") yet (detected automatically once you join a meeting or open its audio settings)"))
                 } else {
-                    status(true, "\(m.listeners.joined(separator: "、")) 正在使用 \(m.virtualMic ?? "")")
+                    status(true, L("\(m.listeners.joined(separator: "、")) 正在使用 \(m.virtualMic ?? "")", "\(m.listeners.joined(separator: ", ")) is using \(m.virtualMic ?? "")"))
                 }
-                note("会后不用改回来：下次开会直接开始同传即可。不开同传时对方听不到你，记得开会前先点“开始同传”。")
+                note(L("会后不用改回来：下次开会直接开始同传即可。不开同传时对方听不到你，记得开会前先点“开始同传”。", "No need to switch back afterwards: just start interpreting at your next meeting. While Hushpiece isn't interpreting, they can't hear you, so start it before the meeting."))
             }
         }
     }
@@ -378,14 +380,14 @@ struct OnboardingView: View {
     private var footer: some View {
         HStack {
             if m.step != .language {
-                Button("上一步") { m.step = OnboardingModel.Step(rawValue: m.step.rawValue - 1)! }
+                Button(L("上一步", "Back")) { m.step = OnboardingModel.Step(rawValue: m.step.rawValue - 1)! }
             }
             Spacer()
             if m.step == .meetingApp {
-                Button("稍后再说") { done(false) }
-                Button("开始同传") { done(true) }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                Button(L("稍后再说", "Later")) { done(false) }
+                Button(L("开始同传", "Start Interpreting")) { done(true) }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             } else {
-                Button("下一步") { m.step = OnboardingModel.Step(rawValue: m.step.rawValue + 1)! }
+                Button(L("下一步", "Next")) { m.step = OnboardingModel.Step(rawValue: m.step.rawValue + 1)! }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }
         }
@@ -418,7 +420,7 @@ struct OnboardingView: View {
         HStack {
             Text(cmd).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
             Spacer()
-            Button("复制") {
+            Button(L("复制", "Copy")) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(cmd, forType: .string)
             }

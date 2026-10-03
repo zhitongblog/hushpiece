@@ -31,7 +31,7 @@ import SwiftUI
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = MenuBarIcon.image(phase: 0, active: false)
-        statusItem.button?.toolTip = "耳语同传"
+        statusItem.button?.toolTip = L("耳语同传", "Hushpiece")
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -102,6 +102,18 @@ import SwiftUI
         exit(0)
     }
 
+    /// Settings → interface language → "Reopen Now": start a fresh copy of the bundle once this
+    /// one has gone (the instance lock would otherwise hand the launch back to us).
+    func relaunch() {
+        let bundle = Bundle.main.bundleURL.path
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 1.5; /usr/bin/open -n \"$0\"", bundle]
+        try? p.run()
+        quitWhenSessionEnds = true
+        if engine == nil { quit() } else { stopSession() }
+    }
+
     func showPanel() {
         panel.orderFrontRegardless()
     }
@@ -166,42 +178,44 @@ import SwiftUI
         let st = Prefs.shared
         let remote = Lang.of(st.remoteLang), mine = Lang.of(st.myLang)
 
-        let header = NSMenuItem(title: engine != nil ? "同传中 · \(model.remoteName) ⇄ \(model.myName)" : "未在同传 · \(remote.plain) ⇄ \(mine.plain)", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: engine != nil ? L("同传中 · ", "Interpreting · ") + "\(model.remoteName) ⇄ \(model.myName)"
+                                                     : L("未在同传 · ", "Not interpreting · ") + "\(remote.plain) ⇄ \(mine.plain)", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         if engine != nil {
-            let who = model.listeners.isEmpty ? "会议软件还没有使用虚拟麦克风" : "\(model.listeners.joined(separator: "、")) 正在使用虚拟麦克风"
+            let who = model.listeners.isEmpty ? L("会议软件还没有使用虚拟麦克风", "No meeting app is using the virtual microphone yet")
+                                              : L("\(model.listeners.joined(separator: "、")) 正在使用虚拟麦克风", "\(model.listeners.joined(separator: ", ")) is using the virtual microphone")
             let sub = NSMenuItem(title: who, action: nil, keyEquivalent: ""); sub.isEnabled = false
             menu.addItem(sub)
         }
         menu.addItem(.separator())
 
         if engine == nil {
-            menu.addItem(item("开始同传", #selector(menuStart), "s"))
+            menu.addItem(item(L("开始同传", "Start Interpreting"), #selector(menuStart), "s"))
         } else {
-            menu.addItem(item("结束同传并保存记录", #selector(menuStop), "s"))
+            menu.addItem(item(L("结束同传并保存记录", "End and Save Transcript"), #selector(menuStop), "s"))
         }
-        menu.addItem(item("显示字幕窗", #selector(menuShow), "l"))
-        let tm = item("翻译我的话", #selector(menuToggleTranslate), "t")
+        menu.addItem(item(L("显示字幕窗", "Show Subtitles"), #selector(menuShow), "l"))
+        let tm = item(L("翻译我的话", "Translate Me"), #selector(menuToggleTranslate), "t")
         tm.state = model.translateMe ? .on : .off
         menu.addItem(tm)
         menu.addItem(.separator())
 
-        menu.addItem(langMenu("对方说", current: st.remoteLang, tag: 1))
-        menu.addItem(langMenu("我说", current: st.myLang, tag: 2))
+        menu.addItem(langMenu(L("对方说", "They speak"), current: st.remoteLang, tag: 1))
+        menu.addItem(langMenu(L("我说", "I speak"), current: st.myLang, tag: 2))
         menu.addItem(appMenu())
         if engine != nil {
-            let note = NSMenuItem(title: "（语言和声音来源的修改在下次开始时生效）", action: nil, keyEquivalent: "")
+            let note = NSMenuItem(title: L("（语言和声音来源的修改在下次开始时生效）", "(Language and source changes apply next time you start)"), action: nil, keyEquivalent: "")
             note.isEnabled = false
             menu.addItem(note)
         }
         menu.addItem(.separator())
 
         menu.addItem(recordsMenu())
-        menu.addItem(item("设置…", #selector(menuSettings), ","))
-        menu.addItem(item("使用引导…", #selector(menuOnboarding), ""))
+        menu.addItem(item(L("设置…", "Settings…"), #selector(menuSettings), ","))
+        menu.addItem(item(L("使用引导…", "Setup Guide…"), #selector(menuOnboarding), ""))
         menu.addItem(.separator())
-        menu.addItem(item("退出耳语同传", #selector(menuQuit), "q"))
+        menu.addItem(item(L("退出耳语同传", "Quit Hushpiece"), #selector(menuQuit), "q"))
     }
 
     private func item(_ title: String, _ sel: Selector, _ key: String) -> NSMenuItem {
@@ -211,7 +225,7 @@ import SwiftUI
     }
 
     private func langMenu(_ title: String, current: String, tag: Int) -> NSMenuItem {
-        let parent = NSMenuItem(title: "\(title)：\(Lang.of(current).name)", action: nil, keyEquivalent: "")
+        let parent = NSMenuItem(title: title + L("：", ": ") + Lang.of(current).name, action: nil, keyEquivalent: "")
         let sub = NSMenu()
         for l in Lang.all {
             let i = NSMenuItem(title: l.name, action: #selector(menuPickLang(_:)), keyEquivalent: "")
@@ -227,9 +241,9 @@ import SwiftUI
 
     private func appMenu() -> NSMenuItem {
         let current = Prefs.shared.remoteApp
-        let parent = NSMenuItem(title: "只听：\(current ?? "全部系统声音")", action: nil, keyEquivalent: "")
+        let parent = NSMenuItem(title: L("只听：", "Listen to: ") + (current ?? L("全部系统声音", "All system audio")), action: nil, keyEquivalent: "")
         let sub = NSMenu()
-        let all = NSMenuItem(title: "全部系统声音", action: #selector(menuPickApp(_:)), keyEquivalent: "")
+        let all = NSMenuItem(title: L("全部系统声音", "All system audio"), action: #selector(menuPickApp(_:)), keyEquivalent: "")
         all.target = self; all.state = current == nil ? .on : .off
         sub.addItem(all)
         sub.addItem(.separator())
@@ -246,25 +260,25 @@ import SwiftUI
     }
 
     private func recordsMenu() -> NSMenuItem {
-        let parent = NSMenuItem(title: "会议记录", action: nil, keyEquivalent: "")
+        let parent = NSMenuItem(title: L("会议记录", "Meeting Transcripts"), action: nil, keyEquivalent: "")
         let sub = NSMenu()
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd_HHmmss"
-        let show = DateFormatter(); show.dateFormat = "M月d日 HH:mm"
+        let show = DateFormatter(); show.dateFormat = L("M月d日 HH:mm", "MMM d, HH:mm")
         for url in SessionLog.list().suffix(10).reversed() {
             let id = url.deletingPathExtension().lastPathComponent
             let n = SessionLog.read(url).count
             guard n > 0 else { continue }
-            let title = (f.date(from: id).map(show.string(from:)) ?? id) + "  ·  \(n) 句"
+            let title = (f.date(from: id).map(show.string(from:)) ?? id) + "  ·  " + L("\(n) 句", n == 1 ? "1 line" : "\(n) lines")
             let i = NSMenuItem(title: title, action: #selector(menuOpenRecord(_:)), keyEquivalent: "")
             i.target = self; i.representedObject = url
             sub.addItem(i)
         }
         if sub.items.isEmpty {
-            let e = NSMenuItem(title: "还没有记录", action: nil, keyEquivalent: ""); e.isEnabled = false
+            let e = NSMenuItem(title: L("还没有记录", "No transcripts yet"), action: nil, keyEquivalent: ""); e.isEnabled = false
             sub.addItem(e)
         }
         sub.addItem(.separator())
-        let open = NSMenuItem(title: "打开记录文件夹", action: #selector(menuOpenFolder), keyEquivalent: "")
+        let open = NSMenuItem(title: L("打开记录文件夹", "Open Transcripts Folder"), action: #selector(menuOpenFolder), keyEquivalent: "")
         open.target = self
         sub.addItem(open)
         parent.submenu = sub
@@ -305,7 +319,7 @@ import SwiftUI
         if onboardingWindow == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
                              styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
-            w.title = "欢迎使用耳语同传"
+            w.title = L("欢迎使用耳语同传", "Welcome to Hushpiece")
             w.titlebarAppearsTransparent = true
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: OnboardingView(m: OnboardingModel(), done: { [weak self, weak w] start in
@@ -324,7 +338,7 @@ import SwiftUI
         if settingsWindow == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 540),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            w.title = "耳语同传 设置"
+            w.title = L("耳语同传 设置", "Hushpiece Settings")
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView(overlay: model))
             w.center()
@@ -393,7 +407,7 @@ enum MenuBarIcon {
     if let pid = AppInstance.runningPID() {
         // Second launch (e.g. double-clicking the app again): hand over to the running one.
         try? Control.post(ControlRequest(cmd: showOnboarding ? "onboarding" : "show"))
-        print("耳语同传已在运行 (pid \(pid))")
+        print(L("耳语同传已在运行 (pid \(pid))", "Hushpiece is already running (pid \(pid))"))
         exit(0)
     }
     let app = NSApplication.shared

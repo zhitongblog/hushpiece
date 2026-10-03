@@ -33,10 +33,10 @@ final class OverlayModel: ObservableObject {
 
     @Published var active = false              // a session is running
     @Published var starting = false
-    @Published var remoteName = "英语"
-    @Published var myName = "中文"
-    @Published var remoteShort = "英"
-    @Published var myShort = "中"
+    @Published var remoteName = L("英语", "English")
+    @Published var myName = L("中文", "Chinese")
+    @Published var remoteShort = L("英", "EN")
+    @Published var myShort = L("中", "ZH")
     @Published var source = ""                 // what we listen to: "全部系统声音" / "企业微信"
     @Published var mic = ""
     @Published var outputDevice: String?       // virtual mic we speak into, nil = subtitles only
@@ -105,9 +105,9 @@ struct OverlayView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .padding(.horizontal, 7).padding(.vertical, 2)
                 .background(Color.white.opacity(0.10), in: Capsule())
-                .help("对方说\(m.remoteName)，字幕显示\(m.myName)")
+                .help(L("对方说\(m.remoteName)，字幕显示\(m.myName)", "They speak \(m.remoteName); subtitles in \(m.myName)"))
             if m.speaking {
-                Label("正在用\(m.remoteName)播报", systemImage: "speaker.wave.2.fill")
+                Label(L("正在用\(m.remoteName)播报", "Speaking in \(m.remoteName)"), systemImage: "speaker.wave.2.fill")
                     .font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.amber)
                     .labelStyle(.titleAndIcon)
             }
@@ -115,7 +115,7 @@ struct OverlayView: View {
             // A system switch turns grey in this never-key panel and reads as "off"; draw our own.
             Button { m.translateMe.toggle() } label: {
                 HStack(spacing: 6) {
-                    Text("翻译我的话").font(.system(size: 11))
+                    Text(L("翻译我的话", "Translate me")).font(.system(size: 11))
                     ZStack(alignment: m.translateMe ? .trailing : .leading) {
                         Capsule().fill(m.translateMe ? Palette.amber : Color.white.opacity(0.18)).frame(width: 28, height: 16)
                         Circle().fill(.white).frame(width: 12, height: 12).padding(.horizontal, 2)
@@ -124,22 +124,22 @@ struct OverlayView: View {
                 }
             }
             .buttonStyle(.plain)
-            .help("关掉后只送你的原声，比如你想直接说\(m.remoteName)时")
-            .accessibilityLabel("翻译我的话")
-            .accessibilityValue(m.translateMe ? "开" : "关")
-            iconButton("textformat.size.smaller", "字号减小") { m.fontSize = max(13, m.fontSize - 2) }
-            iconButton("textformat.size.larger", "字号增大") { m.fontSize = min(40, m.fontSize + 2) }
+            .help(L("关掉后只送你的原声，比如你想直接说\(m.remoteName)时", "Off: only your own voice goes out, e.g. when you want to speak \(m.remoteName) yourself"))
+            .accessibilityLabel(L("翻译我的话", "Translate me"))
+            .accessibilityValue(m.translateMe ? L("开", "on") : L("关", "off"))
+            iconButton("textformat.size.smaller", L("字号减小", "Smaller text")) { m.fontSize = max(13, m.fontSize - 2) }
+            iconButton("textformat.size.larger", L("字号增大", "Larger text")) { m.fontSize = min(40, m.fontSize + 2) }
             iconButton(m.compact ? "rectangle.expand.vertical" : "rectangle.compress.vertical",
-                       m.compact ? "展开" : "紧凑模式（只显示一行字幕）") { m.compact.toggle() }
-            iconButton("minus", "隐藏字幕窗（同传继续，点菜单栏图标可恢复）") { m.onHide?() }
+                       m.compact ? L("展开", "Expand") : L("紧凑模式（只显示一行字幕）", "Compact mode (one line of subtitles)")) { m.compact.toggle() }
+            iconButton("minus", L("隐藏字幕窗（同传继续，点菜单栏图标可恢复）", "Hide the panel (interpreting continues; bring it back from the menu bar)")) { m.onHide?() }
             if m.active {
                 Button { m.onStop?() } label: {
-                    Text("结束").font(.system(size: 11, weight: .semibold))
+                    Text(L("结束", "End")).font(.system(size: 11, weight: .semibold))
                         .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(Palette.bad.opacity(0.85), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .help("结束同传并保存记录")
+                .help(L("结束同传并保存记录", "End interpreting and save the transcript"))
             }
         }
         .frame(height: 26)
@@ -159,10 +159,10 @@ struct OverlayView: View {
     }
 
     private var statusText: String {
-        if m.starting { return "正在启动…" }
-        if !m.active { return "未在同传" }
-        if !m.captureConnected { return "对方声音已断开，正在重连…" }
-        return m.remoteActive ? "对方正在说话 · \(m.source)" : "正在听 · \(m.source)"
+        if m.starting { return L("正在启动…", "Starting…") }
+        if !m.active { return L("未在同传", "Not interpreting") }
+        if !m.captureConnected { return L("对方声音已断开，正在重连…", "Lost the other side's audio, reconnecting…") }
+        return m.remoteActive ? L("对方正在说话 · ", "They're speaking · ") + m.source : L("正在听 · ", "Listening · ") + m.source
     }
 
     // MARK: status row: where my translated voice goes, and whether anyone hears it
@@ -172,18 +172,18 @@ struct OverlayView: View {
             HStack(spacing: 14) {
                 if let out = m.outputDevice {
                     if m.listeners.isEmpty {
-                        Label("会议软件还没把麦克风设成 \(out)，你的\(m.remoteName)译文不会播出", systemImage: "exclamationmark.triangle.fill")
+                        Label(L("会议软件还没把麦克风设成 \(out)，你的\(m.remoteName)译文不会播出", "No meeting app is using \(out) as its microphone yet, so your \(m.remoteName) translation won't be heard"), systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(Palette.warn)
                     } else {
-                        Label("\(m.listeners.joined(separator: "、")) 正在使用 \(out)，对方能听到你的\(m.remoteName)译文", systemImage: "checkmark.circle.fill")
+                        Label(L("\(m.listeners.joined(separator: "、")) 正在使用 \(out)，对方能听到你的\(m.remoteName)译文", "\(m.listeners.joined(separator: ", ")) is using \(out); they hear your \(m.remoteName) translation"), systemImage: "checkmark.circle.fill")
                             .foregroundStyle(Palette.ok)
                     }
                 } else if m.active {
-                    Label("只显示字幕（没有虚拟麦克风，你的译文请自己念）", systemImage: "captions.bubble")
+                    Label(L("只显示字幕（没有虚拟麦克风，你的译文请自己念）", "Subtitles only (no virtual microphone: read your translation out yourself)"), systemImage: "captions.bubble")
                         .foregroundStyle(Palette.dim)
                 }
                 if m.active {
-                    Label(m.echoGuard ? "外放：对方说话时暂停识别你" : "耳机：一直识别你", systemImage: m.echoGuard ? "speaker.wave.2" : "headphones")
+                    Label(m.echoGuard ? L("外放：对方说话时暂停识别你", "Speakers: you're paused while they talk") : L("耳机：一直识别你", "Headphones: always listening to you"), systemImage: m.echoGuard ? "speaker.wave.2" : "headphones")
                         .foregroundStyle(Palette.faint)
                 }
             }
@@ -223,10 +223,11 @@ struct OverlayView: View {
     private var emptyState: some View {
         VStack(spacing: 6) {
             Image(systemName: "waveform").font(.system(size: 22)).foregroundStyle(Palette.faint)
-            Text(m.active ? "等待对方说话…" : "还没有开始同传")
+            Text(m.active ? L("等待对方说话…", "Waiting for them to speak…") : L("还没有开始同传", "Not interpreting yet"))
                 .font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.dim)
-            Text(m.active ? "对方的\(m.remoteName)会以\(m.myName)字幕显示在这里；你说的\(m.myName)会翻成\(m.remoteName)显示在右侧"
-                          : "点菜单栏的耳语同传图标 → 开始同传")
+            Text(m.active ? L("对方的\(m.remoteName)会以\(m.myName)字幕显示在这里；你说的\(m.myName)会翻成\(m.remoteName)显示在右侧",
+                              "Their \(m.remoteName) appears here as \(m.myName) subtitles; what you say in \(m.myName) appears on the right in \(m.remoteName)")
+                          : L("点菜单栏的耳语同传图标 → 开始同传", "Click the Hushpiece icon in the menu bar → Start"))
                 .font(.system(size: 12)).foregroundStyle(Palette.faint).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -276,7 +277,7 @@ struct OverlayView: View {
 
     private var compactBody: some View {
         let last = m.lines.last { !$0.mine }
-        let main = !m.remoteLivePreview.isEmpty ? m.remoteLivePreview + " …" : (last?.translated ?? (m.active ? "等待对方说话…" : "未在同传"))
+        let main = !m.remoteLivePreview.isEmpty ? m.remoteLivePreview + " …" : (last?.translated ?? (m.active ? L("等待对方说话…", "Waiting for them to speak…") : L("未在同传", "Not interpreting")))
         let sub = !m.remoteLive.isEmpty ? m.remoteLive : (last?.original ?? "")
         return VStack(spacing: 3) {
             Text(main).font(.system(size: m.fontSize + 2, weight: .semibold)).lineLimit(2)
@@ -295,7 +296,7 @@ struct OverlayView: View {
             // Own dark styling: .roundedBorder keeps a white field in light mode while the
             // panel's .white foreground makes the typed text white-on-white.
             TextField("", text: $draft,
-                      prompt: Text("输入\(m.myName)或\(m.remoteName)，回车后用\(m.remoteName)念给对方听").foregroundStyle(Palette.faint))
+                      prompt: Text(L("输入\(m.myName)或\(m.remoteName)，回车后用\(m.remoteName)念给对方听", "Type in \(m.myName) or \(m.remoteName), press Return to say it in \(m.remoteName)")).foregroundStyle(Palette.faint))
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(.white)
@@ -306,8 +307,8 @@ struct OverlayView: View {
             }
             .buttonStyle(.plain)
             .disabled(draft.isEmpty || !m.active)
-            .help("用\(m.remoteName)念给对方听")
-            .accessibilityLabel("用\(m.remoteName)念给对方听")
+            .help(L("用\(m.remoteName)念给对方听", "Say it in \(m.remoteName)"))
+            .accessibilityLabel(L("用\(m.remoteName)念给对方听", "Say it in \(m.remoteName)"))
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -347,7 +348,7 @@ final class OverlayPanel: NSPanel, NSWindowDelegate {
         self.init(contentRect: rect,
                   styleMask: [.nonactivatingPanel, .titled, .resizable, .fullSizeContentView],
                   backing: .buffered, defer: false)
-        title = "耳语同传"
+        title = L("耳语同传", "Hushpiece")
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { standardWindowButton(b)?.isHidden = true }

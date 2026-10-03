@@ -140,9 +140,9 @@ final class SessionLog {
 
     static func markdown(_ url: URL) -> String {
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
-        var out = "# 通话记录 \(url.deletingPathExtension().lastPathComponent)\n\n"
+        var out = L("# 会议记录 ", "# Meeting transcript ") + "\(url.deletingPathExtension().lastPathComponent)\n\n"
         for e in read(url) {
-            let who = e.dir == "remote" ? "对方" : (e.dir == "typed" ? "我（打字）" : "我")
+            let who = e.dir == "remote" ? L("对方", "Them") : (e.dir == "typed" ? L("我（打字）", "Me (typed)") : L("我", "Me"))
             out += "**\(f.string(from: e.ts)) \(who)**  \n\(e.src)  \n> \(e.dst)\n\n"
         }
         return out
@@ -229,32 +229,69 @@ enum Control {
 /// A language the whole pipeline supports: on-device speech recognition + translation + a voice.
 struct Lang: Hashable, Identifiable {
     let id: String      // speech locale, e.g. "en-GB"
-    let name: String    // shown in menus: "英语（英国）"
-    let short: String   // shown in tight places: "英"
+    let zh: String      // "英语（英国）"
+    let en: String      // "English (UK)"
+    let zhShort: String // tight places: "英"
+    let enShort: String // "EN"
+
+    var name: String { L(zh, en) }
+    var short: String { L(zhShort, enShort) }
+    /// The language without the region, for sentences like "用英语念给对方听" / "spoken in English".
+    var plain: String { L(zh.components(separatedBy: "（").first ?? zh, en.components(separatedBy: " (").first ?? en) }
 
     static let all: [Lang] = [
-        Lang(id: "zh-CN", name: "中文（普通话）", short: "中"),
-        Lang(id: "zh-TW", name: "中文（台湾）", short: "中"),
-        Lang(id: "en-GB", name: "英语（英国）", short: "英"),
-        Lang(id: "en-US", name: "英语（美国）", short: "英"),
-        Lang(id: "en-AU", name: "英语（澳大利亚）", short: "英"),
-        Lang(id: "en-IN", name: "英语（印度）", short: "英"),
-        Lang(id: "ja-JP", name: "日语", short: "日"),
-        Lang(id: "ko-KR", name: "韩语", short: "韩"),
-        Lang(id: "fr-FR", name: "法语", short: "法"),
-        Lang(id: "de-DE", name: "德语", short: "德"),
-        Lang(id: "es-ES", name: "西班牙语（西班牙）", short: "西"),
-        Lang(id: "es-MX", name: "西班牙语（墨西哥）", short: "西"),
-        Lang(id: "it-IT", name: "意大利语", short: "意"),
-        Lang(id: "pt-BR", name: "葡萄牙语（巴西）", short: "葡"),
-        Lang(id: "pt-PT", name: "葡萄牙语（葡萄牙）", short: "葡"),
+        Lang(id: "zh-CN", zh: "中文（普通话）", en: "Chinese (Mandarin)", zhShort: "中", enShort: "ZH"),
+        Lang(id: "zh-TW", zh: "中文（台湾）", en: "Chinese (Taiwan)", zhShort: "中", enShort: "ZH"),
+        Lang(id: "en-GB", zh: "英语（英国）", en: "English (UK)", zhShort: "英", enShort: "EN"),
+        Lang(id: "en-US", zh: "英语（美国）", en: "English (US)", zhShort: "英", enShort: "EN"),
+        Lang(id: "en-AU", zh: "英语（澳大利亚）", en: "English (Australia)", zhShort: "英", enShort: "EN"),
+        Lang(id: "en-IN", zh: "英语（印度）", en: "English (India)", zhShort: "英", enShort: "EN"),
+        Lang(id: "ja-JP", zh: "日语", en: "Japanese", zhShort: "日", enShort: "JA"),
+        Lang(id: "ko-KR", zh: "韩语", en: "Korean", zhShort: "韩", enShort: "KO"),
+        Lang(id: "fr-FR", zh: "法语", en: "French", zhShort: "法", enShort: "FR"),
+        Lang(id: "de-DE", zh: "德语", en: "German", zhShort: "德", enShort: "DE"),
+        Lang(id: "es-ES", zh: "西班牙语（西班牙）", en: "Spanish (Spain)", zhShort: "西", enShort: "ES"),
+        Lang(id: "es-MX", zh: "西班牙语（墨西哥）", en: "Spanish (Mexico)", zhShort: "西", enShort: "ES"),
+        Lang(id: "it-IT", zh: "意大利语", en: "Italian", zhShort: "意", enShort: "IT"),
+        Lang(id: "pt-BR", zh: "葡萄牙语（巴西）", en: "Portuguese (Brazil)", zhShort: "葡", enShort: "PT"),
+        Lang(id: "pt-PT", zh: "葡萄牙语（葡萄牙）", en: "Portuguese (Portugal)", zhShort: "葡", enShort: "PT"),
     ]
     static func of(_ id: String) -> Lang {
-        all.first { $0.id == id } ?? all.first { $0.id.prefix(2) == id.prefix(2) } ?? Lang(id: id, name: id, short: id)
+        all.first { $0.id == id } ?? all.first { $0.id.prefix(2) == id.prefix(2) }
+            ?? Lang(id: id, zh: id, en: id, zhShort: id, enShort: id)
     }
-    /// "英语" without the region, for sentences like "用英语念给对方听".
-    var plain: String { name.components(separatedBy: "（").first ?? name }
+
+    /// First-run defaults: "I speak" follows the Mac's language; the other side is English for
+    /// Chinese speakers and Chinese for everyone else (the app's two founding use cases).
+    static var defaultMine: String {
+        for pref in Locale.preferredLanguages {
+            let p = pref.replacingOccurrences(of: "_", with: "-")
+            if p.hasPrefix("zh-Hant") || p.hasPrefix("zh-TW") || p.hasPrefix("zh-HK") { return "zh-TW" }
+            if p.hasPrefix("zh") { return "zh-CN" }
+            if let exact = all.first(where: { p.hasPrefix($0.id) }) { return exact.id }
+            if let same = all.first(where: { $0.id.prefix(2) == p.prefix(2) }) { return same.id }
+        }
+        return "en-US"
+    }
+    static var defaultRemote: String { defaultMine.hasPrefix("zh") ? "en-GB" : "zh-CN" }
 }
+
+// MARK: - Interface language
+
+/// The app speaks Chinese to Chinese-language Macs and English to everyone else, unless the user
+/// picked one in Settings. HUSHPIECE_UILANG=zh|en overrides both (tests, screenshots).
+enum UILang {
+    static let isZh: Bool = {
+        switch ProcessInfo.processInfo.environment["HUSHPIECE_UILANG"] ?? Prefs.shared.uiLanguage {
+        case "zh": return true
+        case "en": return false
+        default: return Locale.preferredLanguages.first?.hasPrefix("zh") ?? false
+        }
+    }()
+}
+
+/// Inline bilingual string: every user-facing text in the app is written as L("中文", "English").
+@inline(__always) func L(_ zh: String, _ en: String) -> String { UILang.isZh ? zh : en }
 
 // MARK: - User settings (menu bar / settings window; CLI flags override per run)
 
@@ -267,8 +304,10 @@ final class Prefs {
     private let d: UserDefaults = Bundle.main.bundleIdentifier == "app.hushpiece.Hushpiece"
         ? .standard : (UserDefaults(suiteName: "app.hushpiece.Hushpiece") ?? .standard)
 
-    var myLang: String { get { d.string(forKey: "myLang") ?? "zh-CN" } set { d.set(newValue, forKey: "myLang") } }
-    var remoteLang: String { get { d.string(forKey: "remoteLang") ?? "en-GB" } set { d.set(newValue, forKey: "remoteLang") } }
+    var myLang: String { get { d.string(forKey: "myLang") ?? Lang.defaultMine } set { d.set(newValue, forKey: "myLang") } }
+    var remoteLang: String { get { d.string(forKey: "remoteLang") ?? Lang.defaultRemote } set { d.set(newValue, forKey: "remoteLang") } }
+    /// Interface language: "auto" (follow macOS), "zh", "en". Takes effect on the next launch.
+    var uiLanguage: String { get { d.string(forKey: "uiLanguage") ?? "auto" } set { d.set(newValue, forKey: "uiLanguage") } }
     var remoteApp: String? { get { d.string(forKey: "remoteApp") } set { d.set(newValue, forKey: "remoteApp") } }
     var micName: String? { get { d.string(forKey: "micName") } set { d.set(newValue, forKey: "micName") } }
     var outputName: String? { get { d.string(forKey: "outputName") } set { d.set(newValue, forKey: "outputName") } }

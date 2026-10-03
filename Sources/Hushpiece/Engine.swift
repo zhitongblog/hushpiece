@@ -117,7 +117,7 @@ final class Engine {
         let fwd = await Translator.isInstalled(from: remoteLang, to: myLang)
         let back = await Translator.isInstalled(from: myLang, to: remoteLang)
         if !fwd || !back {
-            fail("\(remoteL.plain)⇄\(myL.plain) 翻译模型未安装：请在菜单栏 → 使用引导 里下载")
+            fail(L("\(remoteL.plain)⇄\(myL.plain) 翻译模型未安装：请在菜单栏 → 使用引导 里下载", "\(remoteL.plain)⇄\(myL.plain) translation models aren't installed: download them from the menu bar → Setup Guide"))
         }
 
         // Output (virtual mic). Without it we run subtitles-only and show the English for me to read aloud.
@@ -127,9 +127,9 @@ final class Engine {
                 output = try CallOutput(device: outDev)
                 update { $0.outputDevice = outDev.name }
                 await MainActor.run { model.outputDevice = outDev.name }
-            } catch { fail("无法打开输出设备 \(outDev.name): \(error.localizedDescription)") }
+            } catch { fail(L("无法打开输出设备 \(outDev.name)：", "Can't open output device \(outDev.name): ") + error.localizedDescription) }
         } else {
-            fail("没有虚拟麦克风：只显示字幕，我的\(remoteL.plain)译文请自己念")
+            fail(L("没有虚拟麦克风：只显示字幕，我的\(remoteL.plain)译文请自己念", "No virtual microphone: subtitles only; read your \(remoteL.plain) translation out yourself"))
         }
 
         // Speech queue: one utterance at a time.
@@ -160,8 +160,8 @@ final class Engine {
             Task { @MainActor in self?.model.meLive = t }
         }
         myASR.onFinal = { [weak self] t in self?.myFinal(t) }
-        do { try await remoteASR.start() } catch { fail("\(remoteL.plain)识别启动失败: \(error.localizedDescription)") }
-        do { try await myASR.start() } catch { fail("\(myL.plain)识别启动失败: \(error.localizedDescription)") }
+                do { try await remoteASR.start() } catch { fail(L("\(remoteL.plain)识别启动失败：", "\(remoteL.plain) recognition failed to start: ") + error.localizedDescription) }
+        do { try await myASR.start() } catch { fail(L("\(myL.plain)识别启动失败：", "\(myL.plain) recognition failed to start: ") + error.localizedDescription) }
 
         // Their audio.
         sys.onBuffer = { [weak self] b in
@@ -170,7 +170,19 @@ final class Engine {
             self.remoteASR.feed(b)
         }
         sys.onConnected = { [weak self] ok in
-            Task { @MainActor in self?.model.captureConnected = ok }
+            Task { @MainActor in
+                guard let self else { return }
+                self.model.captureConnected = ok
+                // Once we hear them again, drop the "can't capture" warnings from the start.
+                if ok {
+                    self.model.banner = self.model.banner.split(separator: "\n")
+                        .filter { !$0.contains(L("屏幕锁定", "screen is locked")) && !$0.contains(L("无法采集系统声音", "Can't capture system audio")) }
+                        .joined(separator: "\n")
+                    self.update { $0.errors.removeAll { $0.contains(L("屏幕锁定", "screen is locked")) || $0.contains(L("无法采集系统声音", "Can't capture system audio")) } }
+                    let d = self.sys.description_; self.update { $0.remoteSource = d }
+                    self.model.source = d == "all system audio" ? L("全部系统声音", "all system audio") : d.replacingOccurrences(of: "audio of ", with: "")
+                }
+            }
         }
         if let f = cfg.remoteFile {
             update { $0.remoteSource = "file " + (f as NSString).lastPathComponent }
@@ -179,7 +191,14 @@ final class Engine {
             try await sys.start(appName: cfg.remoteApp)
             let d = sys.description_; update { $0.remoteSource = d }
         } catch {
-            fail("无法采集系统声音（需要“屏幕与系统录音”权限）: \(error.localizedDescription)")
+            // No display = the screen is locked: ScreenCaptureKit has nothing to attach to until
+            // the user unlocks. Anything else is almost always the missing permission.
+            if (error as NSError).code == 2, (error as NSError).domain == "hushpiece" {
+                fail(L("屏幕锁定时听不到对方的声音，解锁后自动恢复", "Can't hear the other side while the screen is locked; resumes after you unlock"))
+            } else {
+                fail(L("无法采集系统声音（需要“屏幕与系统录音”权限）：", "Can't capture system audio (needs Screen & System Audio Recording permission): ") + error.localizedDescription)
+            }
+            sys.retryInBackground(appName: cfg.remoteApp)
         } }
 
         // My audio.
@@ -202,12 +221,12 @@ final class Engine {
             try mic.start(device: micDev)
             let n = micDev?.name ?? "default"; update { $0.micDevice = n }
         } catch {
-            fail("无法打开麦克风（需要麦克风权限）: \(error.localizedDescription)")
+            fail(L("无法打开麦克风（需要麦克风权限）：", "Can't open the microphone (needs Microphone permission): ") + error.localizedDescription)
         } }
 
         refreshEnvironment()
         await MainActor.run {
-            model.source = status.remoteSource == "all system audio" ? "全部系统声音" : status.remoteSource.replacingOccurrences(of: "audio of ", with: "")
+            model.source = status.remoteSource == "all system audio" ? L("全部系统声音", "all system audio") : status.remoteSource.replacingOccurrences(of: "audio of ", with: "")
             model.mic = status.micDevice
             model.active = true
             let t1 = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in self?.tick() }
@@ -298,7 +317,7 @@ final class Engine {
         while let c = en.first, ".,;:，。、；：".contains(c) { en.removeFirst(); en = en.trimmingCharacters(in: .whitespaces) }
         guard !en.isEmpty else { return }
         Task {
-            let zh = (try? await toMine.translate(en)) ?? "（翻译失败）"
+            let zh = (try? await toMine.translate(en)) ?? L("（翻译失败）", "(translation failed)")
             log.append(Entry(ts: Date(), dir: "remote", src: en, dst: zh))
             update { $0.remoteLines += 1; $0.lastRemote = zh }
             await MainActor.run { self.model.add(Line(mine: false, original: en, translated: zh)) }

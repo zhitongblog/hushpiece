@@ -78,6 +78,14 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
                                             userInfo: [NSLocalizedDescriptionKey: "simulated user stop"]))
     }
 
+    /// Start failed (screen locked, permission not yet granted…): keep trying in the background
+    /// and report through onConnected, exactly like a mid-call interruption.
+    func retryInBackground(appName: String?) {
+        self.appName = appName
+        onConnected?(false)
+        reconnect(attempt: 1)
+    }
+
     private func reconnect(attempt: Int) {
         guard !stopping else { return }
         DispatchQueue.global().asyncAfter(deadline: .now() + min(Double(attempt), 5)) { [weak self] in
