@@ -1,0 +1,26 @@
+{
+  "primaryLocale": "zh-Hans",
+  "copyright": "2026 xiangdong li",
+  "primaryCategory": "PRODUCTIVITY",
+  "secondaryCategory": "BUSINESS",
+  "urls": {
+    "support": "https://hushpiece.tobefree.app/support",
+    "marketing": "https://hushpiece.tobefree.app/",
+    "privacy": "https://hushpiece.tobefree.app/privacy"
+  },
+  "localizations": {
+    "zh-Hans": {
+      "subtitle": "本机会议同传 · 实时双语字幕",
+      "promotionalText": "对方说外语，你看中文字幕；你说中文，译文立刻出来。全部在这台 Mac 上完成：不联网、不注册、不限时长。",
+      "keywords": "同传,同声传译,会议翻译,实时字幕,语音翻译,离线翻译,双语字幕,口译,英语会议,外企,日语,韩语",
+      "screenshots": ["marketing/appstore/zh/1.png", "marketing/appstore/zh/2.png", "marketing/appstore/zh/3.png", "marketing/appstore/zh/4.png", "marketing/appstore/zh/5.png"],
+      "description": "耳语同传是开会时一直待在屏幕上的同传。对方说英语、日语、法语……你看到的是中文字幕；你说中文，译文立刻出来。识别、翻译、发音全部在你的 Mac 上完成，会议内容不出这台电脑。\n\n【听对方：实时双语字幕】\n• 大字是你的语言，小字是原文，没说完的句子先出预览\n• 支持主流会议软件，以及浏览器里的会议：耳语同传直接听系统声音，不需要会议软件做任何配合\n• 可以只听某一个软件，避免把音乐、视频也翻译进来\n• 紧凑模式：一行字幕浮在会议窗口上方，像看电影字幕\n\n【我说话：说完就有译文】\n• 说完一句、停顿一下，译文就显示在字幕窗右侧\n• 也可以打字，回车后用对方的语言念出来\n• 如果你的 Mac 上已有虚拟音频设备，并在会议软件里选它作为麦克风，耳语同传会把译文语音和你的原声一起送进会议；没有时，译文显示在屏幕上，可以自己念或复制到聊天框\n• 外放时自动开启回声保护，戴耳机时自动关闭\n\n【隐私：不联网、不上传】\n• 使用 macOS 自带的本机语音识别、翻译和语音合成模型\n• 没有服务器，没有账号，不保存录音，不包含任何统计或广告 SDK\n• “屏幕与系统录音”权限只用来听对方的声音，不读取画面\n\n【不限时长】\n没有按分钟计费，也没有月度额度。所有计算都在你自己的 Mac 上。\n\n【会后：双语会议记录】\n每场会议自动保存双语对照文字记录，可在菜单栏直接打开。\n\n【语言】\n中文（普通话、台湾）、英语（英国、美国、澳大利亚、印度）、日语、韩语、法语、德语、西班牙语、意大利语、葡萄牙语，任意两种互译。首次使用某种语言时，系统会下载一次本机模型。\n\n【给高级用户】\n附带命令行工具和 MCP 接口，可以用脚本或 AI 助手读取会议记录、控制同传。\n\n需要 macOS 26 和 Apple 芯片的 Mac。"
+    }
+  },
+  "review": {
+    "contactFirstName": "Xiangdong",
+    "contactLastName": "Li",
+    "contactFrom": "app.solopdf",
+    "notes": "Hushpiece (耳语同传) shows live bilingual subtitles for any meeting app and translates what the user says. Everything runs on-device with Apple's Speech (SpeechAnalyzer), Translation and AVSpeechSynthesizer frameworks; the app has no server, no account and makes no network requests.\n\nHOW TO TEST (about 2 minutes, no account needed):\n1. Launch the app. The setup guide asks for the two languages (default: Chinese ⇄ English UK), downloads the on-device models, and requests Microphone and Screen & System Audio Recording permission. Step 6 \"试一试\" (Try it) speaks an English sentence, recognises and translates it — a self-contained check.\n2. Click the waveform icon in the menu bar → 开始同传 (Start). A floating subtitle panel appears.\n3. Play any English speech on the Mac (e.g. a YouTube talk in Safari). Chinese subtitles appear in the panel, with the English underneath.\n4. Type a sentence in the panel's input box and press Return: it is translated and shown on the right.\n\nWHY SCREEN RECORDING: the app uses ScreenCaptureKit only for its audio output, to hear the other side of a meeting. Video frames are configured at 2×2 pixels and never used or stored. Audio is never recorded to disk.\n\nOPTIONAL VIRTUAL AUDIO DEVICE: if the user already has a virtual audio device, the translated speech can be sent into the call through it (a standard output-device choice). The app does not install, download or recommend any driver; without one, the app shows subtitles and the translated text only.\n\nThe UI is in Simplified Chinese; the primary audience is Chinese speakers meeting colleagues abroad."
+  }
+}

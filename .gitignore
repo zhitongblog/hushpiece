@@ -1,6 +1,8 @@
+__pycache__/
 .build-mas/
 .build/
 .swiftpm/
+*.pyc
 dist-mas/
 dist/
 site/.wrangler/

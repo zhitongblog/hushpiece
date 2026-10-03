@@ -45,7 +45,7 @@ cat > dist/entitlements.plist <<'ENT'
 </dict></plist>
 ENT
 IDENTITY=${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | grep -m1 "Developer ID Application" | sed -E 's/.*"(.*)"/\1/')}
-codesign --force --options runtime --timestamp=none --entitlements dist/entitlements.plist -s "${IDENTITY:--}" "$APP"
+codesign --force --options runtime --timestamp --entitlements dist/entitlements.plist -s "${IDENTITY:--}" "$APP"
 codesign --verify --strict "$APP" && echo "built $APP ($VERSION build $BUILD), signed by: ${IDENTITY:-ad-hoc}"
 
 if [[ "${1:-}" == "--install" ]]; then
