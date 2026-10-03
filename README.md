@@ -13,6 +13,12 @@
 
 支持的语言（任意两种互译）：中文（普通话、台湾）、英语（英国、美国、澳大利亚、印度）、日语、韩语、法语、德语、西班牙语、意大利语、葡萄牙语。`hushpiece langs` 列出全部。
 
+## 下载
+
+- **GitHub**：[Releases](https://github.com/zhitongblog/hushpiece/releases/latest) 下载 `Hushpiece-x.y.z.dmg`（已签名并经苹果公证），打开后把“耳语同传”拖进“应用程序”。
+- **网站**：https://hushpiece.tobefree.app
+- 需要 macOS 26 和 Apple 芯片。让对方直接听到译文语音，还需要一个虚拟音频设备（例如免费的 [BlackHole](https://github.com/ExistentialAudio/BlackHole)：`brew install --cask blackhole-2ch`）；没有它也能用字幕和文字译文。
+
 ## 原理
 
 ```
@@ -26,12 +32,16 @@
 - **断线自动重连**：点了菜单栏紫色录制图标的“停止”，1 秒左右自动连回。
 - **结束不会卡死**：每一步都有时限，6 秒内一定保存记录。
 
-## 安装
+## 从源码构建
 
 ```sh
 brew install --cask blackhole-2ch    # 虚拟麦克风（需要管理员密码）；装完 hushpiece devices 里看不到就重启一次电脑
 scripts/install.sh                    # 编译、签名，装到 /Applications/Hushpiece.app，并把 hushpiece 命令链接进 PATH
+scripts/build-dmg.sh                  # 发布用：签名 + 公证的 DMG（需要 Developer ID 证书和 App Store Connect API 密钥）
+scripts/build-mas.sh                  # Mac App Store 版（沙盒；不含第三方驱动引导）
 ```
+
+需要 Xcode 26（Swift 6）。
 
 第一次打开“耳语同传”会出现使用引导：选语言 → 下载模型 → 麦克风权限 → 录屏与系统录音权限 → 虚拟麦克风 → 试一试 → 设置会议软件。每一步自动检测是否完成。
 
@@ -99,3 +109,7 @@ scripts/selftest.sh
 ## 品牌
 
 图标源文件在 `Resources/Brand/`：`icon.svg`（大尺寸）、`icon-small.svg`（16/32 px 简化版）、`menubar.svg`（菜单栏模板图）。白色声波 = 原话，琥珀色 = 译文。
+
+## 许可
+
+MIT
