@@ -15,6 +15,7 @@
 
 ## 下载
 
+- **Homebrew**：`brew install --cask zhitongblog/tap/hushpiece`（同时安装 `hushpiece` 命令）
 - **GitHub**：[Releases](https://github.com/zhitongblog/hushpiece/releases/latest) 下载 `Hushpiece-x.y.z.dmg`（已签名并经苹果公证），打开后把“耳语同传”拖进“应用程序”。
 - **网站**：https://hushpiece.tobefree.app
 - 需要 macOS 26 和 Apple 芯片。让对方直接听到译文语音，还需要一个虚拟音频设备（例如免费的 [BlackHole](https://github.com/ExistentialAudio/BlackHole)：`brew install --cask blackhole-2ch`）；没有它也能用字幕和文字译文。
