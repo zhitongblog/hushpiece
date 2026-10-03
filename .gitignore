@@ -3,3 +3,5 @@
 .swiftpm/
 dist-mas/
 dist/
+site/.wrangler/
+site/node_modules/

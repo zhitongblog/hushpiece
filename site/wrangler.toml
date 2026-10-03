@@ -1,0 +1,13 @@
+# 耳语同传 Hushpiece — product site, privacy policy and support page.
+# Static assets on Cloudflare Workers (free plan); `npx wrangler deploy` from this folder.
+name = "hushpiece-site"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "./public"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+
+[[routes]]
+pattern = "hushpiece.tobefree.app"
+custom_domain = true
