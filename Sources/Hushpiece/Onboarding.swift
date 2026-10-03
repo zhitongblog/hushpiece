@@ -332,10 +332,16 @@ struct OnboardingView: View {
                 if let vm = m.virtualMic {
                     status(true, "已找到虚拟麦克风：\(vm)")
                 } else {
+#if APPSTORE
+                    // App Store build: no third-party driver recommendations (guideline 2.4.5).
+                    status(false, "没有找到虚拟音频设备")
+                    note("如果你的 Mac 上已经有虚拟音频设备，耳语同传会自动使用它。没有也没关系：字幕照常显示，你的\(m.remote.plain)译文显示在字幕窗右侧，可以自己念，或复制到会议的聊天框。")
+#else
                     status(false, "还没有虚拟麦克风")
                     note("在终端运行下面的命令安装免费的 BlackHole（需要输入开机密码）。如果装完仍没显示，重启一次电脑即可。")
                     copyBox("brew install --cask blackhole-2ch")
                     note("也可以先跳过：没有虚拟麦克风时只显示字幕，你的译文显示在屏幕上，自己念给对方听。")
+#endif
                 }
             }
         case .test:

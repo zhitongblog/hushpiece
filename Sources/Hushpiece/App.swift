@@ -5,7 +5,7 @@ import SwiftUI
 /// The long-lived menu bar app. Sessions (Engine instances) start and stop inside it; the
 /// subtitle panel and the model outlive them. `hushpiece run` uses the same controller with
 /// `quitWhenSessionEnds` so CLI-started sessions still exit when they end.
-@MainActor final class AppController: NSObject, NSMenuDelegate {
+@MainActor final class AppController: NSObject, NSMenuDelegate, NSWindowDelegate {
     static var shared: AppController!
 
     let model = OverlayModel()
@@ -314,10 +314,10 @@ import SwiftUI
                 if start { self?.startFromSettings() }
             }))
             w.center()
+            w.delegate = self
             onboardingWindow = w
         }
-        NSApp.activate(ignoringOtherApps: true)
-        onboardingWindow?.makeKeyAndOrderFront(nil)
+        bringToFront(onboardingWindow!)
     }
 
     func showSettingsWindow() {
@@ -328,10 +328,36 @@ import SwiftUI
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView(overlay: model))
             w.center()
+            w.delegate = self
             settingsWindow = w
         }
-        NSApp.activate(ignoringOtherApps: true)
-        settingsWindow?.makeKeyAndOrderFront(nil)
+        bringToFront(settingsWindow!)
+    }
+
+    /// A menu bar (accessory) app is often refused activation on macOS 14+, so its windows open
+    /// behind whatever app is in front — and the floating subtitle panel covers them too. While
+    /// one of our real windows is open, behave like a normal app (Dock icon, activatable) and put
+    /// the window on the panel's level, above it.
+    private func bringToFront(_ w: NSWindow) {
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+        w.level = .floating
+        w.collectionBehavior.insert(.moveToActiveSpace)
+        NSApp.activate()
+        w.makeKeyAndOrderFront(nil)
+        w.orderFrontRegardless()
+        // Activation can land a beat later than the order-front; repeat once it has.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            NSApp.activate()
+            w.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    nonisolated func windowWillClose(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            let closing = notification.object as? NSWindow
+            let others = [onboardingWindow, settingsWindow].compactMap { $0 }.filter { $0 !== closing && $0.isVisible }
+            if others.isEmpty { NSApp.setActivationPolicy(.accessory) }
+        }
     }
 }
 

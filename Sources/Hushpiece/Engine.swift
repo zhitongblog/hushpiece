@@ -293,7 +293,10 @@ final class Engine {
     }
 
     private func remoteFinal(_ raw: String) {
-        let en = normalizeEnglish(raw)
+        // The recognizer sometimes starts a sentence with the previous one's full stop (". Great.").
+        var en = normalizeEnglish(raw).trimmingCharacters(in: .whitespaces)
+        while let c = en.first, ".,;:，。、；：".contains(c) { en.removeFirst(); en = en.trimmingCharacters(in: .whitespaces) }
+        guard !en.isEmpty else { return }
         Task {
             let zh = (try? await toMine.translate(en)) ?? "（翻译失败）"
             log.append(Entry(ts: Date(), dir: "remote", src: en, dst: zh))

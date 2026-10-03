@@ -97,7 +97,7 @@ struct HushpieceMain {
             var ended = false
             for _ in 0..<40 {   // engine's own watchdog fires at 6 s
                 try? await Task.sleep(for: .milliseconds(250))
-                if Status.read() == nil || kill(s.pid, 0) != 0 { ended = true; break }
+                if Status.read() == nil || !processAlive(s.pid) { ended = true; break }
             }
             if !ended {
                 kill(s.pid, SIGKILL)
@@ -122,6 +122,10 @@ struct HushpieceMain {
         case "setup":
             if AppInstance.runningPID() != nil { try? Control.post(ControlRequest(cmd: "onboarding")); print("已在耳语同传中打开使用引导"); exit(0) }
             await runAppMode(start: nil, quitWhenSessionEnds: false, showOnboarding: true)
+
+        case "prefs":   // diagnostics: which defaults domain this process reads
+            print("bundle:", Bundle.main.bundleIdentifier ?? "nil", Bundle.main.bundlePath)
+            print("onboarded:", Prefs.shared.onboarded, " myLang:", Prefs.shared.myLang, " remoteLang:", Prefs.shared.remoteLang, " fontSize:", Prefs.shared.fontSize)
 
         case "langs":
             for l in Lang.all { print("\(l.id)\t\(l.name)") }
@@ -236,7 +240,7 @@ func tts(_ a: Args) async {
     } else {
         dev = name.flatMap { Devices.find($0, output: true) } ?? Devices.blackHole()
     }
-    guard let dev else { print("找不到输出设备（BlackHole 未安装？用 --output default 从扬声器播放）"); exit(1) }
+    guard let dev else { print("找不到输出设备（没有虚拟麦克风？用 --output default 从扬声器播放）"); exit(1) }
     do {
         let out = try CallOutput(device: dev)
         print("playing to \(dev.name)…")

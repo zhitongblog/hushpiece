@@ -172,12 +172,18 @@ struct Status: Codable {
         return s
     }
 
-    var isAlive: Bool { kill(pid, 0) == 0 }
+    var isAlive: Bool { processAlive(pid) }
 
     func write() {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601; enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         try? enc.encode(self).write(to: Paths.status, options: .atomic)
     }
+}
+
+/// kill(pid, 0) answers EPERM instead of 0 inside the App Sandbox, which may not signal other
+/// processes — that still means the process exists.
+func processAlive(_ pid: pid_t) -> Bool {
+    kill(pid, 0) == 0 || errno == EPERM
 }
 
 // MARK: - App instance lock + control channel (CLI `start` / `stop` talk to the running app)
@@ -187,7 +193,7 @@ enum AppInstance {
     static func runningPID() -> pid_t? {
         guard let s = try? String(contentsOf: Paths.appLock, encoding: .utf8),
               let pid = pid_t(s.trimmingCharacters(in: .whitespacesAndNewlines)), pid != getpid(),
-              kill(pid, 0) == 0 else { return nil }
+              processAlive(pid) else { return nil }
         return pid
     }
     static func claim() { try? "\(getpid())".write(to: Paths.appLock, atomically: true, encoding: .utf8) }
@@ -254,7 +260,12 @@ struct Lang: Hashable, Identifiable {
 
 final class Prefs {
     static let shared = Prefs()
-    private let d = UserDefaults(suiteName: "app.hushpiece.Hushpiece") ?? .standard
+    /// Inside the app bundle (Finder launch, or the CLI symlinked to the bundle's binary) the
+    /// standard defaults *are* app.hushpiece.Hushpiece — and AppKit's window-frame autosave
+    /// writes there too. A suite named after our own bundle ID is the one thing NSUserDefaults
+    /// refuses to honour, so only use the suite when running unbundled (swift run / tests).
+    private let d: UserDefaults = Bundle.main.bundleIdentifier == "app.hushpiece.Hushpiece"
+        ? .standard : (UserDefaults(suiteName: "app.hushpiece.Hushpiece") ?? .standard)
 
     var myLang: String { get { d.string(forKey: "myLang") ?? "zh-CN" } set { d.set(newValue, forKey: "myLang") } }
     var remoteLang: String { get { d.string(forKey: "remoteLang") ?? "en-GB" } set { d.set(newValue, forKey: "remoteLang") } }
@@ -273,6 +284,10 @@ final class Prefs {
     var compact: Bool { get { d.bool(forKey: "compact") } set { d.set(newValue, forKey: "compact") } }
     var opacity: Double { get { d.object(forKey: "opacity") as? Double ?? 0.94 } set { d.set(newValue, forKey: "opacity") } }
     var onboarded: Bool { get { d.bool(forKey: "onboarded") } set { d.set(newValue, forKey: "onboarded") } }
+    /// Subtitle panel frame (NSStringFromRect). Kept here rather than in AppKit's frame autosave,
+    /// which writes to whatever the process's standard defaults are — a different domain when the
+    /// CLI symlink launches the app than when Finder does.
+    var overlayFrame: String? { get { d.string(forKey: "overlayFrame") } set { d.set(newValue, forKey: "overlayFrame") } }
 }
 
 // MARK: - Inbox: other processes (CLI `say`, MCP) ask the running instance to speak

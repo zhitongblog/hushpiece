@@ -38,7 +38,7 @@ enum MCPServer {
         var t: [[String: Any]] = [
             ["name": "status", "description": "Whether a live Hushpiece (耳语同传) translation session is running, its devices, line counts and last lines.",
              "inputSchema": schema([:])],
-            ["name": "doctor", "description": "Check speech models, translation models, permissions and the BlackHole virtual mic.",
+            ["name": "doctor", "description": "Check speech models, translation models, permissions and the virtual mic.",
              "inputSchema": schema([:])],
             ["name": "list_sessions", "description": "List recorded call transcripts (newest last).",
              "inputSchema": schema([:])],

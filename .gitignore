@@ -1,3 +1,5 @@
+.build-mas/
 .build/
 .swiftpm/
+dist-mas/
 dist/

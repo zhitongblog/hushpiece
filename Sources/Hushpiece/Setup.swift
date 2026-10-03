@@ -24,9 +24,15 @@ enum Doctor {
         out.append(Check(name: "屏幕与系统录音权限", ok: CGPreflightScreenCaptureAccess(),
                          fix: "hushpiece setup，或 系统设置 → 隐私与安全性 → 屏幕与系统录音"))
         out.append(Check(name: "虚拟麦克风", ok: Devices.blackHole() != nil,
-                         fix: "brew install --cask blackhole-2ch（需要输入管理员密码）"))
+                         fix: Doctor.virtualMicFix))
         return out
     }
+
+#if APPSTORE
+    static let virtualMicFix = "可选：有虚拟音频设备时自动使用，没有则只显示字幕"
+#else
+    static let virtualMicFix = "brew install --cask blackhole-2ch（需要输入管理员密码）"
+#endif
 
     static func print_(_ checks: [Check]) {
         for c in checks {

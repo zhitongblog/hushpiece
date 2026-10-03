@@ -360,7 +360,11 @@ final class OverlayPanel: NSPanel, NSWindowDelegate {
         hasShadow = true
         delegate = self
         contentView = NSHostingView(rootView: OverlayView(m: model))
-        setFrameAutosaveName("HushpieceOverlay")
+        if let saved = Prefs.shared.overlayFrame {
+            let r = NSRectFromString(saved)
+            // Only restore a frame that is still on a connected screen.
+            if r.width >= 520, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(r) }) { setFrame(r, display: false) }
+        }
         // The autosaved frame may be from compact mode; never start the full view squashed.
         if !model.compact && frame.height < 220 {
             var f = frame; f.size.height = 320; setFrame(f, display: false)
@@ -370,6 +374,8 @@ final class OverlayPanel: NSPanel, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { orderOut(nil); return false }
+    func windowDidMove(_ notification: Notification) { Prefs.shared.overlayFrame = NSStringFromRect(frame) }
+    func windowDidResize(_ notification: Notification) { Prefs.shared.overlayFrame = NSStringFromRect(frame) }
 
     private func applyCompact(_ compact: Bool, animate: Bool) {
         var f = frame

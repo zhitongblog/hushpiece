@@ -151,8 +151,15 @@ actor Translator {
         fidelity = highFidelity
     }
 
+    /// The translation daemon sometimes answers "not installed" on its first query after
+    /// waking up, then "installed" a moment later; only believe a negative after re-asking.
     static func isInstalled(from: String, to: String) async -> Bool {
-        await LanguageAvailability().status(from: Locale.Language(identifier: from), to: Locale.Language(identifier: to)) == .installed
+        for attempt in 0..<3 {
+            let s = await LanguageAvailability().status(from: Locale.Language(identifier: from), to: Locale.Language(identifier: to))
+            if s == .installed { return true }
+            if attempt < 2 { try? await Task.sleep(for: .milliseconds(400)) }
+        }
+        return false
     }
 
     /// Retries with a fresh session: the translation daemon occasionally drops a request
