@@ -101,3 +101,17 @@ footer a { color: var(--dim); }
   section { padding: 46px 0; }
   .doc table, .doc thead, .doc tbody, .doc tr, .doc th, .doc td { font-size: 14px; }
 }
+
+/* price comparison + why-free */
+.cmp { width: 100%; border-collapse: collapse; font-size: 15px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.cmp th, .cmp td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cmp th { color: var(--text); font-weight: 600; background: rgba(255, 255, 255, 0.03); }
+.cmp td { color: var(--dim); }
+.cmp tr:last-child td { border-bottom: 0; }
+.cmp tr.us td { color: var(--text); background: rgba(255, 197, 107, 0.08); }
+.cmp tr.us td:first-child { color: var(--amber); font-weight: 600; }
+.cmp-wrap { overflow-x: auto; }
+.src { color: var(--faint); font-size: 13px; margin-top: 10px; text-align: center; }
+.why { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.links { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 18px; font-size: 15px; }
+@media (max-width: 820px) { .why { grid-template-columns: 1fr; } }
