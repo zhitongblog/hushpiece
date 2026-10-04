@@ -13,7 +13,7 @@
 
 ---
 
-Hi HN. I built Hushpiece because I regularly sit in meetings held in a language that isn't my first and couldn't find anything I was comfortable with: the meeting-app options were paid tiers (Zoom's translated captions need Business Plus or a $5/user/month add-on, and the host has to have it; Teams Interpreter needs a Copilot or Teams Premium licence), and the standalone apps upload the call to the cloud and bill by the minute. Some of what gets discussed shouldn't go to a third party, so uploading wasn't an option.
+Hi HN. I built Hushpiece because I regularly sit in meetings held in a language that isn't my first, and couldn't find an interpreter I was comfortable with: the meeting-app options were paid tiers (Zoom's translated captions need Business Plus or a $5/user/month add-on, and the host has to have it; Teams Interpreter needs a Copilot or Teams Premium licence), and the standalone apps upload the call to the cloud and bill by the minute. Some of what gets discussed shouldn't go to a third party, so uploading wasn't an option.
 
 macOS 26 ships on-device speech recognition (SpeechAnalyzer), translation and TTS, so Hushpiece wires those together:
 
