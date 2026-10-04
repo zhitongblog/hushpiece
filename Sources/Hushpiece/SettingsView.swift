@@ -60,13 +60,13 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             general.tabItem { Label(L("通用", "General"), systemImage: "gearshape") }
-            audio.tabItem { Label(L("语言与声音", "Languages & Audio"), systemImage: "waveform") }
+            audio.tabItem { Label(L("语言与声音", "Audio"), systemImage: "waveform") }
             subtitles.tabItem { Label(L("字幕", "Subtitles"), systemImage: "captions.bubble") }
             records.tabItem { Label(L("会议记录", "Transcripts"), systemImage: "doc.text") }
             advanced.tabItem { Label(L("高级", "Advanced"), systemImage: "terminal") }
         }
         .padding(20)
-        .frame(width: 640, height: 540)
+        .frame(width: 720, height: 540)
     }
 
     private var general: some View {

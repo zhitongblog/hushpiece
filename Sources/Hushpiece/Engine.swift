@@ -267,12 +267,13 @@ final class Engine {
 
     private func step(_ name: String, _ seconds: Double, _ body: @escaping @Sendable () async -> Void) async {
         let t0 = Date()
-        let finished = await withTaskGroup(of: Bool.self) { g in
-            g.addTask { await body(); return true }
-            g.addTask { try? await Task.sleep(for: .seconds(seconds)); return false }
-            let first = await g.next() ?? false
-            g.cancelAll()
-            return first
+        // Not a task group: withTaskGroup waits for *every* child before returning, so a body
+        // stuck in a framework call (it happens: SpeechAnalyzer finish on a silent stream) would
+        // make the timeout meaningless. Race two unstructured tasks and take whichever lands first.
+        let finished: Bool = await withCheckedContinuation { cont in
+            let gate = OnceGate()
+            Task { await body(); if gate.claim() { cont.resume(returning: true) } }
+            Task { try? await Task.sleep(for: .seconds(seconds)); if gate.claim() { cont.resume(returning: false) } }
         }
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
         Log.info(finished ? "shutdown: \(name) ok (\(ms) ms)" : "shutdown: \(name) timed out after \(ms) ms, skipping")
@@ -406,3 +407,14 @@ final class Engine {
     }
 }
 
+/// First caller wins; used to resume a continuation exactly once from racing tasks.
+final class OnceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if done { return false }
+        done = true
+        return true
+    }
+}

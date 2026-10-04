@@ -45,7 +45,10 @@ final class OverlayModel: ObservableObject {
     @Published var notHeard = false            // a translation wasn't spoken because nobody listens
     @Published var echoGuard = true
 
-    @Published var translateMe = Prefs.shared.translateMe { didSet { Prefs.shared.translateMe = translateMe } }
+    /// What the user toggles is remembered; what a session sets from CLI flags (--subtitles-only)
+    /// is not — `persist` is off while a session applies its config.
+    @Published var translateMe = Prefs.shared.translateMe { didSet { if persist { Prefs.shared.translateMe = translateMe } } }
+    private var persist = true
     @Published var fontSize = CGFloat(Prefs.shared.fontSize) { didSet { Prefs.shared.fontSize = Double(fontSize) } }
     @Published var compact = Prefs.shared.compact { didSet { Prefs.shared.compact = compact; onCompactChanged?(compact) } }
     @Published var opacity = Prefs.shared.opacity { didSet { Prefs.shared.opacity = opacity } }
@@ -67,7 +70,9 @@ final class OverlayModel: ObservableObject {
             self.captureConnected = true; self.speaking = false; self.remoteActive = false
             self.remoteName = remote.plain; self.myName = mine.plain
             self.remoteShort = remote.short; self.myShort = mine.short
+            self.persist = false
             self.translateMe = translateMe
+            self.persist = true
         }
         if Thread.isMainThread { apply() } else { DispatchQueue.main.sync(execute: apply) }
     }

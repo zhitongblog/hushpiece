@@ -336,7 +336,7 @@ import SwiftUI
 
     func showSettingsWindow() {
         if settingsWindow == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 540),
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 540),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
             w.title = L("耳语同传 设置", "Hushpiece Settings")
             w.isReleasedWhenClosed = false
